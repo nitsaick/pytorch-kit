@@ -3,9 +3,9 @@ import os
 import torch
 from tensorboardX import SummaryWriter
 
-import checkpoint as cp
-import visualize
-from metrics import Evaluator
+import utils.checkpoint as cp
+import utils.visualize as visualize
+from utils.metrics import Evaluator
 
 
 def train_multidim(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_size=1, device='cpu',

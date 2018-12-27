@@ -1,49 +1,16 @@
 import os
 import pickle
-from random import random
 
 import numpy as np
 import torchvision.transforms.functional as F
 from PIL import Image
 from torch.utils import data
 
-from visualize import show_two_img
+from utils.transform import random_flip_transform
+from utils.visualize import show_two_img
 
 
-def random_flip_transform(image, label):
-    # Random horizontal flipping
-    if random() > 0.5:
-        image = F.hflip(image)
-        label = F.hflip(label)
-
-    # Random vertical flipping
-    if random() > 0.5:
-        image = F.vflip(image)
-        label = F.vflip(label)
-
-    if random() > 0.5:
-        gamma = random() * 1 + 0.5
-        image = F.adjust_gamma(image, gamma)
-
-    if random() > 0.5:
-        contrast_factor = random() * 1 + 0.5
-        image = F.adjust_gamma(image, contrast_factor)
-
-    if random() > 0.5:
-        angle = random() * 20 - 10
-        translate = (0, 0)
-        scale = random() * 0.2 + 0.9
-        shear = 0
-        image = F.affine(image, angle, translate, scale, shear)
-        label = F.affine(label, angle, translate, scale, shear)
-
-    # Transform to tensor
-    image = F.to_tensor(image)
-    label = F.to_tensor(label)
-    return image, label
-
-
-class SpineImg(data.Dataset):
+class SpineSeg(data.Dataset):
     def __init__(self, root, transform=None, resume=False, shuffle=False, log_dir=None, valid_rate=0.2):
         self.num_class = 1
         self.img_channels = 1
@@ -127,19 +94,11 @@ class SpineImg(data.Dataset):
 
 # Example
 if __name__ == '__main__':
-    root = './data/'
-    dataset = SpineImg(root=root, cross_valid=True, cross_valid_k=5)
-    a, b, c = dataset.get_dataloader(1)
-
-    dataset.cross_valid_step(6)
-    a, b, c = dataset.get_dataloader(1)
-
-    root = './data/'
     valid_rate = 0.2
-    dataset = SpineImg(root=root, shuffle=True, valid_rate=valid_rate, transform=random_flip_transform)
+    dataset = SpineSeg(root='./dataset/SpineSeg', shuffle=True, valid_rate=0.2, transform=random_flip_transform)
 
     batch_size = 1
-    train_loader, v = dataset.get_dataloader(batch_size)
+    train_loader, _, _ = dataset.get_dataloader(batch_size)
 
     num_epochs = 1
     for epoch in range(num_epochs):

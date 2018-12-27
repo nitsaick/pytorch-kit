@@ -1,16 +1,15 @@
 from optparse import OptionParser
-import numpy as np
 import csv
 
 import torch
 import torchvision
 
-import checkpoint as cp
-from SpineImg import SpineImg
-from evaluation import dice_coef
-from unet import UNet
-from r2unet import R2UNet
-from visualize import show_full
+import utils.checkpoint as cp
+from dataset.SpineSeg import SpineSeg
+from utils.evaluation import dice_coef
+from network.unet import UNet
+from network.r2unet import R2UNet
+from utils.visualize import show_full
 
 
 def get_args():
@@ -36,7 +35,7 @@ if __name__ == '__main__':
     if args.gpu:
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    dataset = SpineImg(args.root, resume=True, valid_rate=0.2)
+    dataset = SpineSeg(args.root, resume=True, valid_rate=0.2)
 
     batch_size = 1
     _, valid_loader, test_loader = dataset.get_dataloader(batch_size)

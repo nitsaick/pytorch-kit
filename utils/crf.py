@@ -2,13 +2,12 @@ import numpy as np
 import pydensecrf.densecrf as dcrf
 import torch
 
-import checkpoint as cp
-from SpineImg import SpineImg
-from xVertSeg import xVertSeg
-from evaluation import dice_coef
-from network import U_Net
+import utils.checkpoint as cp
+from dataset.xVertSeg import xVertSeg
+from utils.evaluation import dice_coef
+from network.network_zoo import U_Net
 
-from visualize import *
+from utils.visualize import *
 
 
 def dense_crf(img, output):
