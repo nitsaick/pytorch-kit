@@ -7,7 +7,8 @@ from optparse import OptionParser
 import torch
 import torch.nn as nn
 
-import network
+import network.network_zoo as network_zoo
+from network.Tunable_UNet import Tunable_UNet
 import utils.checkpoint as cp
 from dataset.SpineSeg import SpineSeg
 from dataset.VOC import VOC2012
@@ -28,15 +29,15 @@ def get_args():
     parser.add_option('-g', '--gpu', dest='gpu', default=0, type='int',
                       help='gpu of index, -1 is cpu')
     parser.add_option('-t', '--log-root', dest='log_root',
-                      default='./runs/', help='tensorboard log root')
+                      default='../runs/', help='tensorboard log root')
     parser.add_option('-n', '--log-name', dest='log_name',
                       default=None, help='tensorboard log name')
     parser.add_option('-r', '--resume-file', dest='resume_file',
                       default=False, help='resume checkpoint file')
     parser.add_option('-d', '--dataset-root', dest='dataset_root',
-                      default='./data/', help='dataset root')
+                      default='../dataset/', help='dataset root')
     parser.add_option('-f', '--dataset-name', dest='dataset_name',
-                      default='SpineImg', help='dataset name')
+                      default='SpineSeg', help='dataset name')
     parser.add_option('-m', '--network', dest='network_name',
                       default='UNet', help='network name')
     parser.add_option('-c', '--base_ch', dest='base_ch', default=64,
@@ -61,7 +62,7 @@ if __name__ == '__main__':
 
     dataset_root = os.path.join(args.dataset_root, args.dataset_name)
 
-    if args.dataset_name == 'SpineImg':
+    if args.dataset_name == 'SpineSeg':
         dataset = SpineSeg(root=dataset_root, transform=random_flip_transform, resume=args.resume_file is not False,
                            shuffle=False, valid_rate=0.2, log_dir=log_dir)
     elif args.dataset_name == 'VOC':
@@ -71,20 +72,19 @@ if __name__ == '__main__':
                            log_dir=log_dir)
 
     criterion = {
-        'SpineImg': nn.BCEWithLogitsLoss(),
+        'SpineSeg': nn.BCEWithLogitsLoss(),
         'VOC': nn.CrossEntropyLoss(ignore_index=255),
         'xVertSeg': nn.BCEWithLogitsLoss()
     }[args.dataset_name]
 
     net = {
-        'UNet': network.U_Net(img_ch=dataset.img_channels, base_ch=args.base_ch, output_ch=dataset.num_class),
-        'R2UNet': network.R2U_Net(img_ch=dataset.img_channels, base_ch=args.base_ch, output_ch=dataset.num_class),
-        'AttUNet': network.AttU_Net(img_ch=dataset.img_channels, output_ch=dataset.num_class),
-        'AttR2UNet': network.R2AttU_Net(img_ch=dataset.img_channels, output_ch=dataset.num_class),
-        'IDANet': network.IDANet(img_ch=dataset.img_channels, base_ch=64, output_ch=dataset.num_class),
-        'TUNet': network.Tunable_UNet(in_channels=1, n_classes=1, depth=5, wf=6, padding=True, batch_norm=True,
-                                      up_mode='upconv'),
-        'test': network.test.unet_CT_single_att_dsv_2D()
+        'UNet': network_zoo.U_Net(img_ch=dataset.img_channels, base_ch=args.base_ch, output_ch=dataset.num_class),
+        'R2UNet': network_zoo.R2U_Net(img_ch=dataset.img_channels, base_ch=args.base_ch, output_ch=dataset.num_class),
+        'AttUNet': network_zoo.AttU_Net(img_ch=dataset.img_channels, output_ch=dataset.num_class),
+        'AttR2UNet': network_zoo.R2AttU_Net(img_ch=dataset.img_channels, output_ch=dataset.num_class),
+        'IDANet': network_zoo.IDANet(img_ch=dataset.img_channels, base_ch=64, output_ch=dataset.num_class),
+        'TUNet': Tunable_UNet(in_channels=1, n_classes=1, depth=5, wf=6, padding=True, batch_norm=True,
+                                      up_mode='upconv')
     }[args.network_name]
 
     optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
@@ -137,7 +137,7 @@ if __name__ == '__main__':
     )
 
     try:
-        if args.dataset_name == 'SpineImg' or args.dataset_name == 'xVertSeg':
+        if args.dataset_name == 'SpineSeg' or args.dataset_name == 'xVertSeg':
             train_onedim(net=net, dataset=dataset, optimizer=optimizer, scheduler=scheduler, criterion=criterion,
                          epoch_num=args.epochs, batch_size=args.batch_size, device=device,
                          checkpoint_dir=checkpoint_dir,

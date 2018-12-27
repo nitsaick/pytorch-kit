@@ -5,7 +5,7 @@ import torch
 import utils.checkpoint as cp
 from dataset.xVertSeg import xVertSeg
 from utils.evaluation import dice_coef
-from network.network import U_Net
+from network.network_zoo import U_Net
 
 from utils.visualize import *
 
