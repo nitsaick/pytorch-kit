@@ -6,7 +6,7 @@ import torchvision.transforms.functional as F
 from PIL import Image
 from torch.utils import data
 
-import visualize
+import utils.visualize as visualize
 
 
 class VOC2012(data.Dataset):
@@ -153,10 +153,10 @@ class VOC2012(data.Dataset):
 
 
 if __name__ == '__main__':
-    dataset = VOC2012(root='E:/pCloud/test_data/VOC2012/')
+    dataset = VOC2012(root='./dataset/VOC2012/')
 
     batch_size = 1
-    train_loader, v = dataset.get_dataloader(batch_size)
+    train_loader, _ = dataset.get_dataloader(batch_size)
 
     num_epochs = 1
 
