@@ -6,10 +6,10 @@ from optparse import OptionParser
 import torch
 import torch.nn as nn
 
-import checkpoint as cp
-from SpineImg import SpineImg
-from train import train_model
-from unet import UNet
+import utils.checkpoint as cp
+from dataset.SpineSeg import SpineSeg
+from train_onedim import train_onedim
+from network.unet import UNet
 
 
 def get_args():
@@ -54,7 +54,7 @@ if __name__ == '__main__':
             elif choice in no:
                 sys.exit(0)
 
-    dataset = SpineImg(args.root, resume=args.resume is not False, cross_valid=True, cross_valid_k=args.k)
+    dataset = SpineSeg(args.root, resume=args.resume is not False, cross_valid=True, cross_valid_k=args.k)
 
     all_acc = []
 
@@ -94,7 +94,7 @@ if __name__ == '__main__':
 
         msg = ' Step {}/{} '.format(step + 1, args.k)
         print('{:-^41s}'.format(msg))
-        acc = train_model(net=net, dataset=dataset, optimizer=optimizer, scheduler=scheduler, criterion=criterion,
+        acc = train_onedim(net=net, dataset=dataset, optimizer=optimizer, scheduler=scheduler, criterion=criterion,
                           epoch_num=args.epochs, batch_size=args.batch_size, device=device,
                           checkpoint_root=checkpoint_root,
                           start_epoch=start_epoch, log_root=log_root)

@@ -6,21 +6,15 @@ from optparse import OptionParser
 
 import torch
 import torch.nn as nn
-from tensorboardX import SummaryWriter
 
-import checkpoint as cp
 import network
-import test
-import visualize
-from VOC import VOC2012
-from xVertSeg import xVertSeg
-from SpineImg import SpineImg
-from SpineImg import random_flip_transform
-from Tunable_UNet import Tunable_UNet
-from metrics import Evaluator
-
-from train_onedim import train_onedim
+import utils.checkpoint as cp
+from dataset.SpineSeg import SpineSeg
+from dataset.VOC import VOC2012
+from dataset.xVertSeg import xVertSeg
 from train_multidim import train_multidim
+from train_onedim import train_onedim
+from utils.transform import random_flip_transform
 
 
 def get_args():
@@ -68,11 +62,13 @@ if __name__ == '__main__':
     dataset_root = os.path.join(args.dataset_root, args.dataset_name)
 
     if args.dataset_name == 'SpineImg':
-        dataset = SpineImg(root=dataset_root, transform=random_flip_transform, resume=args.resume_file is not False, shuffle=False, valid_rate=0.2, log_dir=log_dir)
+        dataset = SpineSeg(root=dataset_root, transform=random_flip_transform, resume=args.resume_file is not False,
+                           shuffle=False, valid_rate=0.2, log_dir=log_dir)
     elif args.dataset_name == 'VOC':
         dataset = VOC2012(root=dataset_root, shuffle=False, valid_rate=0.2, log_dir=log_dir)
     elif args.dataset_name == 'xVertSeg':
-        dataset = xVertSeg(root=dataset_root, resume=args.resume_file is not False, shuffle=False, valid_rate=0.25, log_dir=log_dir)
+        dataset = xVertSeg(root=dataset_root, resume=args.resume_file is not False, shuffle=False, valid_rate=0.25,
+                           log_dir=log_dir)
 
     criterion = {
         'SpineImg': nn.BCEWithLogitsLoss(),
@@ -86,8 +82,9 @@ if __name__ == '__main__':
         'AttUNet': network.AttU_Net(img_ch=dataset.img_channels, output_ch=dataset.num_class),
         'AttR2UNet': network.R2AttU_Net(img_ch=dataset.img_channels, output_ch=dataset.num_class),
         'IDANet': network.IDANet(img_ch=dataset.img_channels, base_ch=64, output_ch=dataset.num_class),
-        'TUNet': Tunable_UNet(in_channels=1, n_classes=1, depth=5, wf=6, padding=True, batch_norm=True, up_mode='upconv'),
-        'test': test.unet_CT_single_att_dsv_2D()
+        'TUNet': network.Tunable_UNet(in_channels=1, n_classes=1, depth=5, wf=6, padding=True, batch_norm=True,
+                                      up_mode='upconv'),
+        'test': network.test.unet_CT_single_att_dsv_2D()
     }[args.network_name]
 
     optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)

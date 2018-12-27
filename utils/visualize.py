@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import torch
 import numpy as np
-from evaluation import post_proc
+from utils.evaluation import post_proc
 
 
 def batch_numpy_to_plt(img):

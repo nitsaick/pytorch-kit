@@ -3,9 +3,9 @@ import os
 import torch
 from tensorboardX import SummaryWriter
 
-import checkpoint as cp
-import evaluation as eval
-from visualize import show_full
+import utils.checkpoint as cp
+import utils.evaluation as eval
+from utils.visualize import show_full
 
 
 def train_onedim(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_size=1, device='cpu',

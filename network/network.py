@@ -508,7 +508,3 @@ class IDANet(nn.Module):
 
         return out
 
-
-if __name__ == '__main__':
-    net = U_Net_5()
-    print(net)
