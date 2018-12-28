@@ -5,7 +5,7 @@ from tensorboardX import SummaryWriter
 
 import utils.checkpoint as cp
 import utils.evaluation as eval
-from utils.visualize import show_full
+from utils.visualize import imshow
 
 
 def train_onedim(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_size=1, device='cpu',
@@ -60,10 +60,11 @@ def train_onedim(net, dataset, optimizer, scheduler, criterion, epoch_num=5, bat
             imgs, labels = imgs.to(device), labels.to(device)
 
             output = net(imgs)
-            if batch_index == 0:
-                show_full(imgs[0][0], labels[0][0], output[0][0], thres, title='Train')
-
             loss = criterion(output, labels)
+
+            if batch_index == 0:
+                imgs, labels, output = dataset.batch_visualize_transform(img=imgs, label=labels, pred=output)
+                imshow('Train', (imgs[0][0], labels[0][0], output[0][0]), cmap='gray')
 
             loss.backward()
             optimizer.step()
@@ -112,7 +113,8 @@ def train_onedim(net, dataset, optimizer, scheduler, criterion, epoch_num=5, bat
 
             # Visualize first image
             if batch_index == 0:
-                show_full(imgs[0][0], labels[0][0], output[0][0], thres, title='Valid')
+                imgs, labels, output = dataset.batch_visualize_transform(img=imgs, label=labels, pred=output)
+                imshow('Train', (imgs[0][0], labels[0][0], output[0][0]), cmap='gray')
                 output = eval.normalize(output)
                 thres_img = eval.post_proc(output, thres)
                 valid_logger.add_image('output', output, epoch)

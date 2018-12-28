@@ -1,12 +1,10 @@
 import numpy as np
 import pydensecrf.densecrf as dcrf
-import torch
 
 import utils.checkpoint as cp
 from dataset.xVertSeg import xVertSeg
-from utils.evaluation import dice_coef
 from network.network_zoo import U_Net
-
+from utils.evaluation import dice_coef
 from utils.visualize import *
 
 
@@ -31,6 +29,7 @@ def dense_crf(img, output):
     q = np.array(q).reshape(c, h, w)
 
     return q
+
 
 # img: b, c=3, h ,w
 # output b, c=2, h ,w
@@ -69,8 +68,6 @@ if __name__ == '__main__':
     batch_num = 0
     thres = 0.5
 
-    fig = create_fig((2, 2))
-
     for batch_index, (imgs, labels) in enumerate(valid_loader):
         imgs = imgs.to(device)
         outputs = net(imgs)
@@ -93,7 +90,8 @@ if __name__ == '__main__':
         total_acc_crf += acc_crf
 
         if acc_crf - acc > 0.05 or acc_crf - acc < -0.05:
-            imshow((imgs[0][0], labels[0][0], outputs[0][1], outputs_crf[0][0]), None, str(acc_crf - acc), (2, 2), ('Img', 'Label', 'Output', 'CRF'), 'gray')
+            imshow(main_title=str(acc_crf - acc), imgs=(imgs[0][0], labels[0][0], outputs[0][1], outputs_crf[0][0]),
+                   shape=(2, 2), sub_title=('Img', 'Label', 'Output', 'CRF'), cmap='gray')
 
         batch_num += 1
         print('before: {}'.format(acc))

@@ -7,7 +7,7 @@ from tensorboardX import SummaryWriter
 import utils.checkpoint as cp
 import utils.evaluation as eval
 from utils.crf import dense_crf_batch
-from utils.visualize import show_full
+from utils.visualize import imshow
 
 
 def train_onedim_with_crf(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_size=1, device='cpu',
@@ -61,14 +61,14 @@ def train_onedim_with_crf(net, dataset, optimizer, scheduler, criterion, epoch_n
         # Training
         for batch_index, (imgs, labels) in enumerate(train_loader):
             optimizer.zero_grad()
-
             imgs, labels = imgs.to(device), labels.to(device)
 
             output = net(imgs)
-            if batch_index == 0:
-                show_full(imgs[0][0], labels[0][0], output[0][0], thres, title='Train')
-
             loss = criterion(output, labels)
+
+            if batch_index == 0:
+                imgs, labels, output = dataset.batch_visualize_transform(img=imgs, label=labels, pred=output)
+                imshow('Train', (imgs[0][0], labels[0][0], output[0][0]), cmap='gray')
 
             loss.backward()
             optimizer.step()
@@ -119,7 +119,8 @@ def train_onedim_with_crf(net, dataset, optimizer, scheduler, criterion, epoch_n
 
             # Visualize first image
             if batch_index == 0:
-                show_full(imgs[0][0], labels[0][0], output[0][0], thres, title='Valid')
+                imgs, labels, output = dataset.batch_visualize_transform(img=imgs, label=labels, pred=output)
+                imshow('Train', (imgs[0][0], labels[0][0], output[0][0]), cmap='gray')
                 output = eval.normalize(output)
                 thres_img = eval.post_proc(output, thres)
                 valid_logger.add_image('image', imgs, epoch)
@@ -141,7 +142,8 @@ def train_onedim_with_crf(net, dataset, optimizer, scheduler, criterion, epoch_n
 
             # Visualize first image
             if batch_index == 0:
-                show_full(imgs[0][0], labels[0][0], outputs_crf[0][0], thres, title='CRF')
+                imgs, labels, outputs_crf = dataset.batch_visualize_transform(img=imgs, label=labels, pred=outputs_crf)
+                imshow('Train', (imgs[0][0], labels[0][0], outputs_crf[0][0]), cmap='gray')
                 output = eval.normalize(outputs_crf)
                 thres_img = eval.post_proc(output, thres)
                 crf_logger.add_image('output', output, epoch)

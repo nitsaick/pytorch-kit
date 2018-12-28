@@ -38,8 +38,6 @@ def train_multidim(net, dataset, optimizer, scheduler, criterion, epoch_num=5, b
     best_epoch = 0
     thres = 0.5
 
-    fig = visualize.create_fig((1, 3))
-
     for epoch in range(start_epoch, epoch_num):
         epoch_str = ' Epoch {}/{} '.format(epoch + 1, epoch_num)
         print('{:-^47s}'.format(epoch_str))
@@ -66,8 +64,9 @@ def train_multidim(net, dataset, optimizer, scheduler, criterion, epoch_num=5, b
                 vis_imgs = dataset.batch_visualize_transform(imgs, 'image')
                 vis_labels = dataset.batch_visualize_transform(labels, 'label')
                 vis_outputs = dataset.batch_visualize_transform(outputs, 'predict')
-                visualize.imshow(imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), main_title='Train', shape=(1, 3),
-                                 sub_title=('image', 'label', 'predict'), transpose=True, fig=fig)
+
+                visualize.imshow(main_title='Train', imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), shape=(1, 3),
+                                 sub_title=('image', 'label', 'predict'), transpose=True)
 
             loss = criterion(outputs, labels)
 
@@ -113,8 +112,8 @@ def train_multidim(net, dataset, optimizer, scheduler, criterion, epoch_num=5, b
                 vis_imgs = dataset.batch_visualize_transform(imgs, 'image')
                 vis_labels = dataset.batch_visualize_transform(labels, 'label')
                 vis_outputs = dataset.batch_visualize_transform(outputs, 'predict')
-                visualize.imshow(imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), main_title='Valid', shape=(1, 3),
-                                 sub_title=('image', 'label', 'predict'), transpose=True, fig=fig)
+                visualize.imshow(main_title='Valid', imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), shape=(1, 3),
+                                 sub_title=('image', 'label', 'predict'), transpose=True)
                 valid_logger.add_image('input', imgs, epoch)
                 valid_logger.add_image('label', vis_labels, epoch)
                 valid_logger.add_image('output', vis_outputs, epoch)

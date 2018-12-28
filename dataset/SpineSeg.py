@@ -7,7 +7,7 @@ from PIL import Image
 from torch.utils import data
 
 from utils.transform import random_flip_transform
-from utils.visualize import show_two_img
+from utils.visualize import imshow
 
 
 class SpineSeg(data.Dataset):
@@ -22,43 +22,63 @@ class SpineSeg(data.Dataset):
         labels = [os.path.join(label_root, img) for img in os.listdir(label_root)]
 
         if len(imgs) != len(labels):
-            raise AssertionError('image和label的數量不一致')
+            raise AssertionError('Number of image and label are not same.')
 
         self.imgs = imgs
         self.labels = labels
+
+        self.dataset_size = len(imgs)
 
         if transform is None:
             self.transform = self.default_transform
         else:
             self.transform = transform
 
-        dataset_size = len(imgs)
-
         if log_dir is None:
             log_dir = root
 
         indices_filename = os.path.join(log_dir, 'indices.npy')
         if resume:
-            with open(indices_filename, 'rb') as fp:  # Unpickling
+            with open(indices_filename, 'rb') as fp:
                 self.indices = pickle.load(fp)
         else:
             if os.path.exists(log_dir) is False:
                 os.makedirs(log_dir)
-            self.indices = list(range(dataset_size))
+            self.indices = list(range(self.dataset_size))
             if shuffle:
                 np.random.shuffle(self.indices)
-            with open(indices_filename, 'wb') as fp:  # Pickling
+            with open(indices_filename, 'wb') as fp:
                 pickle.dump(self.indices, fp)
 
-        split = int(np.floor(valid_rate * dataset_size))
+        split = int(np.floor(valid_rate * self.dataset_size))
         self.train_indices, self.valid_indices = self.indices[split:], self.indices[:split]
         self.train_dataset = data.Subset(self, self.train_indices)
         self.valid_dataset = data.Subset(self, self.valid_indices)
 
         self.train_sampler = data.RandomSampler(self.train_dataset)
         self.valid_sampler = data.SequentialSampler(self.valid_dataset)
-
         self.test_sampler = data.SequentialSampler(self)
+
+    def batch_visualize_transform(self, img, label, pred, to_plt=False):
+        if img is not None:
+            if type(img).__module__ != np.__name__:
+                img = img.cpu().detach().numpy()
+            if to_plt is True:
+                img = img.transpose((0, 2, 3, 1))
+
+        if label is not None:
+            if type(label).__module__ != np.__name__:
+                label = label.cpu().detach().numpy()
+            if to_plt is True:
+                label = label.transpose((0, 2, 3, 1))
+
+        if pred is not None:
+            if type(pred).__module__ != np.__name__:
+                pred = pred.cpu().detach().numpy()
+            if to_plt is True:
+                pred = pred.transpose((0, 2, 3, 1))
+
+        return img, label, pred
 
     def default_transform(self, image, label):
         image = F.to_tensor(image)
@@ -81,21 +101,21 @@ class SpineSeg(data.Dataset):
         label_path = self.labels[index]
         label = Image.open(label_path)
 
-        if (index in self.train_indices):
+        if index in self.train_indices:
             img, label = self.transform(img, label)
         else:
             img, label = self.default_transform(img, label)
 
-        return img, label  # 可以改為輸出numpy，DataLoader也會自動轉為Tensor，但不會做標準化，如果使用PIL讀圖，需手動轉換成Tensor
+        return img, label
 
     def __len__(self):
-        return len(self.imgs)
+        return self.dataset_size
 
 
 # Example
 if __name__ == '__main__':
     valid_rate = 0.2
-    dataset = SpineSeg(root='./dataset/SpineSeg', shuffle=True, valid_rate=0.2, transform=random_flip_transform)
+    dataset = SpineSeg(root='../../dataset/SpineSeg', shuffle=True, valid_rate=0.2, transform=random_flip_transform)
 
     batch_size = 1
     train_loader, _, _ = dataset.get_dataloader(batch_size)
@@ -105,4 +125,5 @@ if __name__ == '__main__':
         print('Epoch:', epoch)
         for batch_index, (img, label) in enumerate(train_loader):
             print('Batch Index:', batch_index)
-            show_two_img(img[0], label[0])
+            a, b, _ = dataset.batch_visualize_transform(img=img, label=label, pred=None, to_plt=True)
+            imshow(main_title='SpineSeg', imgs=(a[0][0], b[0][0]), cmap='gray')

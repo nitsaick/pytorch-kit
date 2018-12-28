@@ -1,14 +1,13 @@
 import os
 import pickle
-from random import random
 
 import numpy as np
 import torchvision.transforms.functional as F
 from PIL import Image
 from torch.utils import data
 
-from utils.visualize import show_two_img
-from utils.transform import random_flip_transform
+from utils.visualize import imshow
+
 
 class xVertSeg(data.Dataset):
     def __init__(self, root, transform=None, resume=False, shuffle=False, log_dir=None, valid_rate=0.2):
@@ -68,6 +67,27 @@ class xVertSeg(data.Dataset):
 
         self.test_sampler = data.SequentialSampler(self)
 
+    def batch_visualize_transform(self, img, label, pred, to_plt=False):
+        if img is not None:
+            if type(img).__module__ != np.__name__:
+                img = img.cpu().detach().numpy()
+            if to_plt is True:
+                img = img.transpose((0, 2, 3, 1))
+
+        if label is not None:
+            if type(label).__module__ != np.__name__:
+                label = label.cpu().detach().numpy()
+            if to_plt is True:
+                label = label.transpose((0, 2, 3, 1))
+
+        if pred is not None:
+            if type(pred).__module__ != np.__name__:
+                pred = pred.cpu().detach().numpy()
+            if to_plt is True:
+                pred = pred.transpose((0, 2, 3, 1))
+
+        return img, label, pred
+
     def default_transform(self, image, label):
         image = F.to_tensor(image)
         label = F.to_tensor(label)
@@ -111,4 +131,4 @@ if __name__ == '__main__':
         print('Epoch:', epoch)
         for batch_index, (img, label) in enumerate(train_loader):
             print('Batch Index:', batch_index)
-            show_two_img(img[0], label[0])
+            imshow(main_title='SpineSeg', imgs=(img[0][0], label[0][0]), cmap='gray')

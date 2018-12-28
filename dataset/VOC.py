@@ -94,25 +94,32 @@ class VOC2012(data.Dataset):
                       'sofa', 'train', 'tv/monitor']
         return class_name
 
-    def batch_visualize_transform(self, img, img_type, to_plt=False):
-        if type(img).__module__ != np.__name__:
-            img = img.cpu().detach().numpy()
+    def batch_visualize_transform(self, img, label, pred, to_plt=False):
+        if img is not None:
+            if type(img).__module__ != np.__name__:
+                img = img.cpu().detach().numpy()
+            if to_plt is True:
+                img = img.transpose((0, 2, 3, 1))
 
-        if img_type == 'image':
-            img = img
-        elif img_type == 'label':
-            img = self.cmap[img]
-            img = img.transpose((0, 3, 1, 2))
-        elif img_type == 'predict':
-            if img.shape[1] == self.num_class:
-                img = img.argmax(axis=1)
-            img = self.cmap[img.astype(int)]
-            img = img.transpose((0, 3, 1, 2))
+        if label is not None:
+            if type(label).__module__ != np.__name__:
+                label = label.cpu().detach().numpy()
+            label = self.cmap[label]
+            label = label.transpose((0, 3, 1, 2))
+            if to_plt is True:
+                label = label.transpose((0, 2, 3, 1))
 
-        if to_plt is True:
-            img = img.transpose((0, 2, 3, 1))
+        if pred is not None:
+            if type(pred).__module__ != np.__name__:
+                pred = pred.cpu().detach().numpy()
+            if pred.shape[1] == self.num_class:
+                pred = pred.argmax(axis=1)
+            pred = self.cmap[pred.astype(int)]
+            pred = pred.transpose((0, 3, 1, 2))
+            if to_plt is True:
+                pred = pred.transpose((0, 2, 3, 1))
 
-        return img
+        return img, label, pred
 
     def label_to_multiclass(self, label):
         class_capture = np.zeros((self.num_class, 256))
@@ -153,18 +160,15 @@ class VOC2012(data.Dataset):
 
 
 if __name__ == '__main__':
-    dataset = VOC2012(root='./dataset/VOC2012/')
+    dataset = VOC2012(root='../../dataset/VOC2012/')
 
     batch_size = 1
     train_loader, _ = dataset.get_dataloader(batch_size)
 
     num_epochs = 1
-
-    fig = visualize.create_fig((1, 2))
     for epoch in range(num_epochs):
         print('Epoch:', epoch)
         for batch_index, (img, label) in enumerate(train_loader):
             print('Batch Index:', batch_index)
-            a = dataset.batch_visualize_transform(img, 'image', to_plt=True)
-            b = dataset.batch_visualize_transform(label, 'label', to_plt=True)
-            visualize.imshow((a[0], b[0]), shape=(1, 2), fig=fig)
+            a, b, _ = dataset.batch_visualize_transform(img=img, label=label, pred=None, to_plt=True)
+            visualize.imshow('VOC', (a[0], b[0]))
