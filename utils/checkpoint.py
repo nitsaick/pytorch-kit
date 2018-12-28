@@ -27,4 +27,3 @@ def load_file(root):
 
 if __name__ == '__main__':
     cp = load_file('./checkpoint/')
-    cp = load_file('./checkpoint/1.pth')

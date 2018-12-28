@@ -8,8 +8,6 @@ import utils.checkpoint as cp
 from dataset.SpineSeg import SpineSeg
 from utils.evaluation import dice_coef
 from network.unet import UNet
-from network.r2unet import R2UNet
-from utils.visualize import show_full
 
 
 def get_args():
@@ -68,7 +66,6 @@ if __name__ == '__main__':
 
             filename = './pred/' + dataset.imgs[batch_index * batch_size + i].split('/')[-1]
             torchvision.utils.save_image(result, filename)
-            # show_full(imgs[i][0], labels[i][0], output[i][0], thres)
 
             out_row = (dataset.imgs[batch_index * batch_size + i].split('/')[-1], acc)
             csv_out.writerow(out_row)
