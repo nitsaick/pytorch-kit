@@ -18,12 +18,12 @@ def imshow(main_title, imgs, shape=None, sub_title=None, cmap=None, transpose=Fa
             sub_title = (sub_title,) * num
         else:
             assert len(sub_title) == num
-
+        
         if type(cmap) is not tuple:
             cmap = (cmap,) * num
         else:
             assert len(cmap) == num
-
+            
         fig = plt.figure(num=main_title, figsize=(shape[1] * 3, shape[0] * 3))
         fig.clf()
         fig.suptitle(main_title)
@@ -33,10 +33,17 @@ def imshow(main_title, imgs, shape=None, sub_title=None, cmap=None, transpose=Fa
 
         for i in range(shape[0]):
             for j in range(shape[1]):
-                index = i * shape[1] + j
-                axes[index].set_title(sub_title[index])
-                img = numpy_to_plt(imgs[index]) if transpose is True else imgs[index]
-                axes[index].imshow(img, cmap[index])
+                idx = i * shape[1] + j
+                axes[idx].set_title(sub_title[idx])
+                
+                cm = cmap[idx]
+                img = imgs[idx]
+                if cmap[idx] is None and len(img.shape) == 3 and img.shape[0] == 1:
+                    cm = 'gray'
+                    img = img.reshape((img.shape[1], img.shape[2]))
+                
+                img = numpy_to_plt(img) if transpose is True else img
+                axes[idx].imshow(img, cm)
 
     else:
         if transpose: imgs = numpy_to_plt(imgs)
