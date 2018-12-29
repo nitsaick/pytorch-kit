@@ -10,12 +10,10 @@ import torch.nn as nn
 import network.network_zoo as network_zoo
 from network.Tunable_UNet import Tunable_UNet
 import utils.checkpoint as cp
-from dataset.SpineSeg import SpineSeg
-from dataset.VOC import VOC2012
-from dataset.xVertSeg import xVertSeg
+from dataset.segmentation import *
 from train_multidim import train_multidim
 from train_onedim import train_onedim
-from utils.transform import random_flip_transform
+from dataset.transform import random_flip_transform
 
 
 def get_args():
@@ -66,7 +64,7 @@ if __name__ == '__main__':
         dataset = SpineSeg(root=dataset_root, transform=random_flip_transform, resume=args.resume_file is not False,
                            shuffle=False, valid_rate=0.2, log_dir=log_dir)
     elif args.dataset_name == 'VOC':
-        dataset = VOC2012(root=dataset_root, shuffle=False, valid_rate=0.2, log_dir=log_dir)
+        dataset = VOC2012Seg(root=dataset_root, shuffle=False, valid_rate=0.2, log_dir=log_dir)
     elif args.dataset_name == 'xVertSeg':
         dataset = xVertSeg(root=dataset_root, resume=args.resume_file is not False, shuffle=False, valid_rate=0.25,
                            log_dir=log_dir)
@@ -78,11 +76,11 @@ if __name__ == '__main__':
     }[args.dataset_name]
 
     net = {
-        'UNet': network_zoo.U_Net(img_ch=dataset.img_channels, base_ch=args.base_ch, output_ch=dataset.num_class),
-        'R2UNet': network_zoo.R2U_Net(img_ch=dataset.img_channels, base_ch=args.base_ch, output_ch=dataset.num_class),
-        'AttUNet': network_zoo.AttU_Net(img_ch=dataset.img_channels, output_ch=dataset.num_class),
-        'AttR2UNet': network_zoo.R2AttU_Net(img_ch=dataset.img_channels, output_ch=dataset.num_class),
-        'IDANet': network_zoo.IDANet(img_ch=dataset.img_channels, base_ch=64, output_ch=dataset.num_class),
+        'UNet': network_zoo.U_Net(img_ch=dataset.img_channels, base_ch=args.base_ch, output_ch=dataset.num_classes),
+        'R2UNet': network_zoo.R2U_Net(img_ch=dataset.img_channels, base_ch=args.base_ch, output_ch=dataset.num_classes),
+        'AttUNet': network_zoo.AttU_Net(img_ch=dataset.img_channels, output_ch=dataset.num_classes),
+        'AttR2UNet': network_zoo.R2AttU_Net(img_ch=dataset.img_channels, output_ch=dataset.num_classes),
+        'IDANet': network_zoo.IDANet(img_ch=dataset.img_channels, base_ch=64, output_ch=dataset.num_classes),
         'TUNet': Tunable_UNet(in_channels=1, n_classes=1, depth=5, wf=6, padding=True, batch_norm=True,
                                       up_mode='upconv')
     }[args.network_name]
