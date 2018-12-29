@@ -7,7 +7,7 @@ import torch
 from PIL import Image
 from torch.utils import data
 
-from dataset.transform import to_tensor
+import dataset.transform as T
 
 class BaseSegDataset(data.Dataset, metaclass=ABCMeta):
     def __init__(self, root, valid_rate=0.2, transform=None, transform_params=None,
@@ -124,7 +124,7 @@ class SpineSeg(BaseSegDataset):
         return imgs, labels, preds
     
     def default_transform(self, img, label):
-        img, label = to_tensor(img, label)
+        img, label = T.to_tensor(img, label)
         label = torch.where(label > 0.5, torch.ones_like(label), torch.zeros_like(label))
         return img, label
     
@@ -177,7 +177,7 @@ class xVertSeg(BaseSegDataset):
         return imgs, labels, preds
     
     def default_transform(self, img, label):
-        img, label = to_tensor(img, label)
+        img, label = T.to_tensor(img, label)
         label = torch.where(label > 0.5, torch.ones_like(label), torch.zeros_like(label))
         return img, label
     
@@ -250,7 +250,7 @@ class VOC2012Seg(BaseSegDataset):
         return imgs, labels, preds
     
     def default_transform(self, img, label):
-        img, label = to_tensor(img, label)
+        img, label = T.to_tensor(img, label)
         label = (label * 255).long().view(label.shape[1], label.shape[2])
         return img, label
     
