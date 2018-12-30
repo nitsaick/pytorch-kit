@@ -1,6 +1,7 @@
-import torch
 import glob
 import os
+
+import torch
 
 
 def save(epoch, net, optimizer, root):
@@ -23,6 +24,18 @@ def load_latest(root):
 def load_file(root):
     checkpoint = torch.load(root)
     return checkpoint
+
+
+def load_params(root, net, optimizer, device):
+    checkpoint = load_file(root)
+    epoch = checkpoint['epoch'] + 1
+    net.load_state_dict(checkpoint['net'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    for state in optimizer.state.values():
+        for k, v in state.items():
+            if isinstance(v, torch.Tensor):
+                state[k] = v.to(device)
+    return net, optimizer, epoch
 
 
 if __name__ == '__main__':

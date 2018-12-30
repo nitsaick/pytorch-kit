@@ -4,10 +4,12 @@ from abc import ABCMeta, abstractmethod
 
 import numpy as np
 import torch
+import torchvision.transforms.functional
 from PIL import Image
 from torch.utils import data
 
-import dataset.transform as T
+import dataset.transform as transform
+
 
 class BaseSegDataset(data.Dataset, metaclass=ABCMeta):
     def __init__(self, root, valid_rate=0.2, transform=None, transform_params=None,
@@ -17,6 +19,7 @@ class BaseSegDataset(data.Dataset, metaclass=ABCMeta):
         self.dataset_size = len(self.imgs)
         self.classes_name = self.get_classes_name()
         self.num_classes = len(self.classes_name)
+        self.cmap = self.get_colormap()
         
         self.transform = transform
         self.transform_params = transform_params
@@ -45,7 +48,7 @@ class BaseSegDataset(data.Dataset, metaclass=ABCMeta):
         self.train_sampler = data.RandomSampler(self.train_dataset)
         self.valid_sampler = data.SequentialSampler(self.valid_dataset)
         self.all_sampler = data.SequentialSampler(self)
-
+        
         self.img_channels = self.__getitem__(0)[0].shape[0]
     
     def get_dataloader(self, batch_size=1):
@@ -63,12 +66,40 @@ class BaseSegDataset(data.Dataset, metaclass=ABCMeta):
         pass
     
     @abstractmethod
-    def default_transform(img, label):
+    def get_colormap(self):
         pass
     
     @abstractmethod
-    def batch_visualize_transform(self, imgs, labels, preds, to_plt=False):
+    def default_transform(self, img, label):
         pass
+    
+    def vis_transform(self, imgs, labels, preds, to_plt=False):
+        cmap = self.get_colormap()
+        if imgs is not None:
+            if type(imgs).__module__ != np.__name__:
+                imgs = imgs.cpu().detach().numpy()
+            if to_plt is True:
+                imgs = imgs.transpose((0, 2, 3, 1))
+        
+        if labels is not None:
+            if type(labels).__module__ != np.__name__:
+                labels = labels.cpu().detach().numpy()
+            labels = cmap[labels]
+            labels = labels.transpose((0, 3, 1, 2))
+            if to_plt is True:
+                labels = labels.transpose((0, 2, 3, 1))
+        
+        if preds is not None:
+            if type(preds).__module__ != np.__name__:
+                preds = preds.cpu().detach().numpy()
+            if preds.shape[1] == self.num_classes:
+                preds = preds.argmax(axis=1)
+            preds = cmap[preds]
+            preds = preds.transpose((0, 3, 1, 2))
+            if to_plt is True:
+                preds = preds.transpose((0, 2, 3, 1))
+        
+        return imgs, labels, preds
     
     def __getitem__(self, index):
         img_path = self.imgs[index]
@@ -102,35 +133,20 @@ class SpineSeg(BaseSegDataset):
         
         return imgs, labels
     
-    def batch_visualize_transform(self, imgs, labels, preds, to_plt=False):
-        if imgs is not None:
-            if type(imgs).__module__ != np.__name__:
-                imgs = imgs.cpu().detach().numpy()
-            if to_plt is True:
-                imgs = imgs.transpose((0, 2, 3, 1))
-        
-        if labels is not None:
-            if type(labels).__module__ != np.__name__:
-                labels = labels.cpu().detach().numpy()
-            if to_plt is True:
-                labels = labels.transpose((0, 2, 3, 1))
-        
-        if preds is not None:
-            if type(preds).__module__ != np.__name__:
-                preds = preds.cpu().detach().numpy()
-            if to_plt is True:
-                preds = preds.transpose((0, 2, 3, 1))
-        
-        return imgs, labels, preds
-    
     def default_transform(self, img, label):
-        img, label = T.to_tensor(img, label)
+        img, label = transform.to_tensor(img, label)
         label = torch.where(label > 0.5, torch.ones_like(label), torch.zeros_like(label))
+        label = label.long().view(label.shape[1], label.shape[2])
         return img, label
     
     def get_classes_name(self):
         classes_name = ['background', 'target']
         return classes_name
+    
+    def get_colormap(self):
+        cmap = [[0, ], [255, ]]
+        cmap = np.array(cmap, dtype=np.int)
+        return cmap
 
 
 class xVertSeg(BaseSegDataset):
@@ -155,42 +171,28 @@ class xVertSeg(BaseSegDataset):
         
         return imgs, labels
     
-    def batch_visualize_transform(self, imgs, labels, preds, to_plt=False):
-        if imgs is not None:
-            if type(imgs).__module__ != np.__name__:
-                imgs = imgs.cpu().detach().numpy()
-            if to_plt is True:
-                imgs = imgs.transpose((0, 2, 3, 1))
-        
-        if labels is not None:
-            if type(labels).__module__ != np.__name__:
-                labels = labels.cpu().detach().numpy()
-            if to_plt is True:
-                labels = labels.transpose((0, 2, 3, 1))
-        
-        if preds is not None:
-            if type(preds).__module__ != np.__name__:
-                preds = preds.cpu().detach().numpy()
-            if to_plt is True:
-                preds = preds.transpose((0, 2, 3, 1))
-        
-        return imgs, labels, preds
-    
     def default_transform(self, img, label):
-        img, label = T.to_tensor(img, label)
+        img, label = transform.to_tensor(img, label)
         label = torch.where(label > 0.5, torch.ones_like(label), torch.zeros_like(label))
+        label = label.long().view(label.shape[1], label.shape[2])
         return img, label
     
     def get_classes_name(self):
         classes_name = ['background', 'target']
         return classes_name
+    
+    def get_colormap(self):
+        cmap = [[0, ], [255, ]]
+        cmap = np.array(cmap, dtype=np.int)
+        return cmap
 
 
 class VOC2012Seg(BaseSegDataset):
     def __init__(self, root, valid_rate=0.2, transform=None, transform_params=None,
-                 shuffle=False, resume=False, log_dir=None):
-        super(VOC2012Seg, self).__init__(root, valid_rate, transform, transform_params, shuffle, resume, log_dir)
+                 shuffle=False, resume=False, log_dir=None, resize=None):
         self.cmap = self.get_colormap()
+        self.resize = resize
+        super(VOC2012Seg, self).__init__(root, valid_rate, transform, transform_params, shuffle, resume, log_dir)
     
     def get_img_list(self, root):
         img_root = os.path.join(root, 'JPEGImages')
@@ -222,36 +224,13 @@ class VOC2012Seg(BaseSegDataset):
         cmap = cmap / 255 if normalized else cmap
         return cmap
     
-    def batch_visualize_transform(self, imgs, labels, preds, to_plt=False):
-        if imgs is not None:
-            if type(imgs).__module__ != np.__name__:
-                imgs = imgs.cpu().detach().numpy()
-            if to_plt is True:
-                imgs = imgs.transpose((0, 2, 3, 1))
-        
-        if labels is not None:
-            if type(labels).__module__ != np.__name__:
-                labels = labels.cpu().detach().numpy()
-            labels = self.cmap[labels]
-            labels = labels.transpose((0, 3, 1, 2))
-            if to_plt is True:
-                labels = labels.transpose((0, 2, 3, 1))
-        
-        if preds is not None:
-            if type(preds).__module__ != np.__name__:
-                preds = preds.cpu().detach().numpy()
-            if preds.shape[1] == self.num_class:
-                preds = preds.argmax(axis=1)
-            preds = self.cmap[preds.astype(int)]
-            preds = preds.transpose((0, 3, 1, 2))
-            if to_plt is True:
-                preds = preds.transpose((0, 2, 3, 1))
-        
-        return imgs, labels, preds
-    
     def default_transform(self, img, label):
-        img, label = T.to_tensor(img, label)
+        if self.resize:
+            img = torchvision.transforms.functional.resize(img, self.resize)
+            label = torchvision.transforms.functional.resize(label, self.resize)
+        img, label = transform.to_tensor(img, label)
         label = (label * 255).long().view(label.shape[1], label.shape[2])
+        
         return img, label
     
     def get_classes_name(self):
@@ -266,35 +245,35 @@ class VOC2012Seg(BaseSegDataset):
 
 
 if __name__ == '__main__':
-    from utils.visualize import imshow
+    from utils.vis import imshow
     from dataset.transform import *
-
+    
     root = os.path.expanduser('~/dataset/SpineSeg')
     dataset_ = SpineSeg(root=root, shuffle=True, valid_rate=0.2, transform=random_flip_transform)
-
+    
     train_loader, _, _ = dataset_.get_dataloader(batch_size=1)
-
+    
     for batch_idx, (img, label) in enumerate(train_loader):
-        imgs, labels, _ = dataset_.batch_visualize_transform(imgs=img, labels=label, preds=None)
-        imshow(main_title='SpineSeg', imgs=(imgs[0], labels[0]))
+        imgs, labels, _ = dataset_.vis_transform(imgs=img, labels=label, preds=None)
+        imshow(title='SpineSeg', imgs=(imgs[0], labels[0]))
         break
-
+    
     root = os.path.expanduser('~/dataset/xVertSeg')
     dataset_ = xVertSeg(root=root, shuffle=True, valid_rate=0.2, transform=random_flip_transform)
-
+    
     train_loader, _, _ = dataset_.get_dataloader(batch_size=1)
-
+    
     for batch_idx, (img, label) in enumerate(train_loader):
-        imgs, labels, _ = dataset_.batch_visualize_transform(imgs=img, labels=label, preds=None)
-        imshow(main_title='xVertSeg', imgs=(imgs[0], labels[0]))
+        imgs, labels, _ = dataset_.vis_transform(imgs=img, labels=label, preds=None)
+        imshow(title='xVertSeg', imgs=(imgs[0], labels[0]))
         break
     
-    root = os.path.expanduser('~/dataset/VOC2012')
+    root = os.path.expanduser('~/dataset/VOC2012Seg')
     dataset_ = VOC2012Seg(root=root, shuffle=True, valid_rate=0.2,
-                          transform=random_crop_transform, transform_params=(200, 200))
+                          transform=random_crop_transform, transform_params=(128, 256))
     
     train_loader, _, _ = dataset_.get_dataloader(batch_size=1)
     for batch_idx, (img, label) in enumerate(train_loader):
-        imgs, labels, _ = dataset_.batch_visualize_transform(imgs=img, labels=label, preds=None, to_plt=True)
-        imshow(main_title='VOC2012', imgs=(imgs[0], labels[0]))
+        imgs, labels, _ = dataset_.vis_transform(imgs=img, labels=label, preds=None, to_plt=True)
+        imshow(title='VOC2012Seg', imgs=(imgs[0], labels[0]))
         break
