@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
 
-from .subnet import DoubleConv, UpConv
+from .subnet import DoubleConv, UpConv, AttentionBlock
 
 
-class UNet(nn.Module):
+class AttUNet(nn.Module):
     def __init__(self, in_ch, out_ch, base_ch=64):
-        super(UNet, self).__init__()
+        super(AttUNet, self).__init__()
         self.inc = DoubleConv(in_ch, base_ch)
         self.down = nn.MaxPool2d(kernel_size=2, stride=2)
         self.down1 = self._Down(base_ch, base_ch * 2)
@@ -35,7 +35,7 @@ class UNet(nn.Module):
     
     class _Down(nn.Module):
         def __init__(self, in_ch, out_ch):
-            super(UNet._Down, self).__init__()
+            super(AttUNet._Down, self).__init__()
             self.down = nn.Sequential(
                 nn.MaxPool2d(kernel_size=2),
                 DoubleConv(in_ch, out_ch)
@@ -47,12 +47,14 @@ class UNet(nn.Module):
     
     class _Up(nn.Module):
         def __init__(self, in_ch, out_ch):
-            super(UNet._Up, self).__init__()
+            super(AttUNet._Up, self).__init__()
             self.up = UpConv(in_ch, out_ch)
+            self.att = AttentionBlock(Fg=out_ch, Fl=out_ch, Fint=out_ch)
             self.conv = DoubleConv(in_ch, out_ch)
         
         def forward(self, x1, x2):
             x1 = self.up(x1)
+            x2 = self.att(g=x1, x=x2)
             x = torch.cat([x2, x1], dim=1)
             x = self.conv(x)
             return x

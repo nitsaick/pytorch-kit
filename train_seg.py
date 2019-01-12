@@ -68,6 +68,10 @@ def train_seg(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_
         print('Learning rate: {}'.format(lr))
         train_logger.add_scalar('lr', lr, epoch)
         
+        if lr < 1e-7:
+            print('Learning rate is less than 1e-7. Stop training.')
+            break
+        
         # Training phase
         net.train()
         torch.set_grad_enabled(True)

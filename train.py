@@ -5,11 +5,10 @@ from optparse import OptionParser
 
 import torch.nn as nn
 
-import network.network_zoo as network_zoo
+import network
 import utils.checkpoint as cp
 from dataset.segmentation import *
 from dataset.transform import random_flip_transform
-from network.Tunable_UNet import Tunable_UNet
 from train_seg import train_seg
 from utils.switch import *
 
@@ -96,30 +95,28 @@ if __name__ == '__main__':
         
         for case in switch(args.network_name):
             if case('UNet'):
-                net = network_zoo.U_Net(img_ch=dataset.img_channels, base_ch=args.base_ch,
-                                        output_ch=dataset.num_classes)
+                net = network.UNet(in_ch=dataset.img_channels, out_ch=dataset.num_classes, base_ch=args.base_ch)
                 break
             
             if case('R2UNet'):
-                net = network_zoo.R2U_Net(img_ch=dataset.img_channels, base_ch=args.base_ch,
-                                          output_ch=dataset.num_classes)
+                net = network.R2UNet(in_ch=dataset.img_channels, out_ch=dataset.num_classes, base_ch=args.base_ch)
                 break
             
             if case('AttUNet'):
-                net = network_zoo.AttU_Net(img_ch=dataset.img_channels, output_ch=dataset.num_classes)
+                net = network.AttUNet(in_ch=dataset.img_channels, out_ch=dataset.num_classes, base_ch=args.base_ch)
                 break
             
             if case('AttR2UNet'):
-                net = network_zoo.AttR2U_Net(img_ch=dataset.img_channels, output_ch=dataset.num_classes)
+                net = network.AttR2UNet(in_ch=dataset.img_channels, out_ch=dataset.num_classes, base_ch=args.base_ch)
                 break
             
             if case('IDANet'):
-                net = network_zoo.IDANet(img_ch=dataset.img_channels, base_ch=64, output_ch=dataset.num_classes)
+                net = network.IDANet(in_ch=dataset.img_channels, out_ch=dataset.num_classes, base_ch=args.base_ch)
                 break
             
             if case('TUNet'):
-                net = Tunable_UNet(in_channels=1, n_classes=1, depth=5, wf=6,
-                                   padding=True, batch_norm=True, up_mode='upconv')
+                net = network.Tunable_UNet(in_channels=1, n_classes=1, depth=5, wf=6,
+                                           padding=True, batch_norm=True, up_mode='upconv')
                 break
             
             if case():
