@@ -1,6 +1,7 @@
 import os
 
 import torch
+from tensorboardX import SummaryWriter
 
 import utils.checkpoint as cp
 from utils.metrics import Evaluator
@@ -20,7 +21,6 @@ def train_seg(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_
     if checkpoint_save_epoch < 1:
         checkpoint_save_epoch = 10
     
-    net = net.to(device)
     train_loader, valid_loader, _ = dataset.get_dataloader(batch_size)
     
     print('{:-^47s}'.format(' Start training '))
@@ -36,6 +36,24 @@ def train_seg(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_
                        len(train_loader.sampler),
                        len(valid_loader.sampler), str(device))
     print(msg)
+
+    train_logger_root = os.path.join(log_dir, 'train')
+    valid_logger_root = os.path.join(log_dir, 'valid')
+    train_logger = SummaryWriter(train_logger_root)
+    valid_logger = SummaryWriter(valid_logger_root)
+    
+    dummy_input = torch.zeros_like(dataset.__getitem__(0)[0])
+    dummy_input = dummy_input.view((1,) + dummy_input.shape)
+    train_logger.add_graph(net, dummy_input)
+    train_logger.add_text('detail', msg)
+    
+    for batch_idx, (imgs, labels) in enumerate(valid_loader):
+        imgs, labels, _ = dataset.vis_transform(imgs, labels, None)
+        valid_logger.add_images('image', imgs, 0)
+        valid_logger.add_images('label', labels, 0)
+        break
+    
+    net = net.to(device)
     
     best_acc = 0.0
     best_epoch = 0
@@ -48,12 +66,14 @@ def train_seg(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_
             lr = param_group['lr']
             break
         print('Learning rate: {}'.format(lr))
+        train_logger.add_scalar('lr', lr, epoch)
         
         # Training phase
         net.train()
         torch.set_grad_enabled(True)
         loss = training(criterion, dataset, device, epoch, net, optimizer, scheduler, train_loader)
         print('loss:  {:.5f}'.format(loss))
+        train_logger.add_scalar('loss', loss, epoch)
         
         if (epoch + 1) % eval_epoch == 0:
             net.eval()
@@ -62,10 +82,12 @@ def train_seg(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_
             # Evaluation phase
             train_acc = evaluation(dataset, device, net, train_loader, eval_func)
             print('Train data avg acc:  {:.5f}'.format(train_acc))
+            train_logger.add_scalar('acc', train_acc, epoch)
             
             # Validation phase
-            valid_acc = validation(dataset, device, net, valid_loader, eval_func)
+            valid_acc = validation(dataset, device, net, valid_loader, eval_func, epoch, valid_logger)
             print('Valid data avg acc:  {:.5f}'.format(valid_acc))
+            valid_logger.add_scalar('acc', valid_acc, epoch)
             
             if valid_acc > best_acc:
                 best_acc = valid_acc
@@ -73,6 +95,7 @@ def train_seg(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_
                 checkpoint_filename = 'best.pth'
                 cp.save(epoch, net, optimizer, os.path.join(checkpoint_dir, checkpoint_filename))
                 print('Update best acc!')
+                valid_logger.add_scalar('best epoch', best_epoch, 0)
             
             print('Best epoch: {:3d}    |    Best valid acc: {:.5f}\n'.format(best_epoch + 1, best_acc))
         
@@ -85,7 +108,7 @@ def training(criterion, dataset, device, epoch, net, optimizer, scheduler, train
     batch_num = len(train_loader)
     epoch_loss = 0.0
     
-    for batch_index, (imgs, labels) in enumerate(train_loader):
+    for batch_idx, (imgs, labels) in enumerate(train_loader):
         optimizer.zero_grad()
         
         imgs, labels = imgs.to(device), labels.to(device)
@@ -97,15 +120,15 @@ def training(criterion, dataset, device, epoch, net, optimizer, scheduler, train
         
         epoch_loss += loss.item()
         
-        if batch_index == 0:
+        if batch_idx == 0:
             outputs = outputs.cpu().detach().numpy().argmax(axis=1)
             imgs, labels, outputs = dataset.vis_transform(imgs, labels, outputs)
             imshow(title='Train', imgs=(imgs[0], labels[0], outputs[0]), shape=(1, 3),
                    subtitle=('image', 'label', 'predict'))
         
-        if (batch_index + 1) % 10 == 0 or batch_index + 1 == batch_num:
+        if (batch_idx + 1) % 10 == 0 or batch_idx + 1 == batch_num:
             print('Epoch: {:3d} | Batch: {:5d}/{:<5d} | loss: {:.5f}'
-                  .format(epoch + 1, batch_index + 1, batch_num, loss.item()))
+                  .format(epoch + 1, batch_idx + 1, batch_num, loss.item()))
     scheduler.step(loss.item())
     
     return loss.item()
@@ -113,7 +136,7 @@ def training(criterion, dataset, device, epoch, net, optimizer, scheduler, train
 
 def evaluation(dataset, device, net, train_loader, eval_func):
     evaluator = Evaluator(dataset.num_classes)
-    for batch_index, (imgs, labels) in enumerate(train_loader):
+    for batch_idx, (imgs, labels) in enumerate(train_loader):
         imgs = imgs.to(device)
         outputs = net(imgs)
         
@@ -125,20 +148,22 @@ def evaluation(dataset, device, net, train_loader, eval_func):
     return train_acc
 
 
-def validation(dataset, device, net, valid_loader, eval_func):
+def validation(dataset, device, net, valid_loader, eval_func, epoch, valid_logger):
     evaluator = Evaluator(dataset.num_classes)
-    for batch_index, (imgs, labels) in enumerate(valid_loader):
+    for batch_idx, (imgs, labels) in enumerate(valid_loader):
         imgs = imgs.to(device)
         outputs = net(imgs)
         
-        outputs = outputs.cpu().detach().numpy().argmax(axis=1)
-        labels = labels.cpu().detach().numpy()
-        evaluator.add_batch(outputs, labels)
+        np_outputs = outputs.cpu().detach().numpy().argmax(axis=1)
+        np_labels = labels.cpu().detach().numpy()
+        evaluator.add_batch(np_outputs, np_labels)
         
-        if batch_index == 0:
-            imgs, labels, outputs = dataset.vis_transform(imgs, labels, outputs)
-            imshow(title='Valid', imgs=(imgs[0], labels[0], outputs[0]), shape=(1, 3),
+        if batch_idx == 0:
+            vis_imgs, vis_labels, vis_outputs = dataset.vis_transform(imgs, labels, outputs)
+            imshow(title='Valid', imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), shape=(1, 3),
                    subtitle=('image', 'label', 'predict'))
+            summary_outputs = torch.argmax(outputs, 1, keepdim=True)
+            valid_logger.add_images('output', summary_outputs, epoch)
     
     valid_acc = evaluator.get_acc(eval_func)
     return valid_acc
