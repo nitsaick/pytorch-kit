@@ -27,6 +27,12 @@ class BaseSegDataset(data.Dataset, metaclass=ABCMeta):
         if log_dir is None:
             log_dir = root
         
+        self._indices_log(log_dir, resume, shuffle)
+        self._split(valid_rate)
+        
+        self.img_channels = self.__getitem__(0)[0].shape[0]
+    
+    def _indices_log(self, log_dir, resume, shuffle):
         indices_filename = os.path.join(log_dir, 'indices.npy')
         if resume:
             with open(indices_filename, 'rb') as fp:
@@ -39,7 +45,8 @@ class BaseSegDataset(data.Dataset, metaclass=ABCMeta):
                 np.random.shuffle(self.indices)
             with open(indices_filename, 'wb') as fp:
                 pickle.dump(self.indices, fp)
-        
+    
+    def _split(self, valid_rate):
         split = int(np.floor(valid_rate * self.dataset_size))
         self.train_indices, self.valid_indices = self.indices[split:], self.indices[:split]
         self.train_dataset = data.Subset(self, self.train_indices)
@@ -48,8 +55,6 @@ class BaseSegDataset(data.Dataset, metaclass=ABCMeta):
         self.train_sampler = data.RandomSampler(self.train_dataset)
         self.valid_sampler = data.SequentialSampler(self.valid_dataset)
         self.all_sampler = data.SequentialSampler(self)
-        
-        self.img_channels = self.__getitem__(0)[0].shape[0]
     
     def get_dataloader(self, batch_size=1):
         train_loader = data.DataLoader(self.train_dataset, batch_size=batch_size, sampler=self.train_sampler)
@@ -150,16 +155,15 @@ class SpineSeg(BaseSegDataset):
 
 
 class xVertSeg(BaseSegDataset):
-    def __init__(self, root, valid_rate=0.2, transform=None, transform_params=None,
+    def __init__(self, root, valid_rate=0.25, transform=None, transform_params=None,
                  shuffle=False, resume=False, log_dir=None):
         super(xVertSeg, self).__init__(root, valid_rate, transform, transform_params, shuffle, resume, log_dir)
     
     def get_img_list(self, root):
-        dirs = [dir_ for dir_ in os.listdir(root) if os.path.isdir(os.path.join(root, dir_))]
+        dirs = [dir_ for dir_ in sorted(os.listdir(root)) if os.path.isdir(os.path.join(root, dir_))]
         
         imgs = []
         labels = []
-        
         for dir_ in dirs:
             dir_ = os.path.join(root, dir_)
             
@@ -187,8 +191,73 @@ class xVertSeg(BaseSegDataset):
         return cmap
 
 
+class xVertSegFold(xVertSeg):
+    def __init__(self, root, cross_valid_k=4, transform=None, transform_params=None,
+                 resume=False, log_dir=None):
+        self.cross_valid_k = cross_valid_k
+        self._step = 0
+        super(xVertSeg, self).__init__(root, None, transform, transform_params, None, resume, log_dir)
+    
+    def cross_valid_step(self, step):
+        if step > self.cross_valid_k - 1:
+            raise AssertionError('step > cross_valid_k - 1')
+        self._step = step
+        self._split()
+    
+    def get_img_list(self, root):
+        dirs = [dir_ for dir_ in sorted(os.listdir(root)) if os.path.isdir(os.path.join(root, dir_))]
+        valid_size = int(np.ceil(len(dirs) / self.cross_valid_k))
+        
+        imgs = []
+        labels = []
+        self.indices = [0, ]
+        
+        for i in range(self.cross_valid_k):
+            for dir_ in dirs[valid_size * i:valid_size * (i + 1)]:
+                dir_ = os.path.join(root, dir_)
+                
+                img_root = os.path.join(dir_, 'image')
+                label_root = os.path.join(dir_, 'label')
+                
+                imgs += [os.path.join(img_root, img) for img in sorted(os.listdir(img_root))]
+                labels += [os.path.join(label_root, img) for img in sorted(os.listdir(label_root))]
+            
+            self.indices.append(len(imgs))
+        
+        return imgs, labels
+    
+    def _indices_log(self, log_dir, resume, shuffle=None):
+        self.all_indices = list(range(self.dataset_size))
+        
+        indices_filename = os.path.join(log_dir, 'indices.npy')
+        if resume:
+            with open(indices_filename, 'rb') as fp:
+                self.indices = pickle.load(fp)
+        else:
+            if os.path.exists(log_dir) is False:
+                os.makedirs(log_dir)
+            with open(indices_filename, 'wb') as fp:
+                pickle.dump(self.indices, fp)
+    
+    def _split(self, valid_rate=None):
+        self.valid_indices = []
+        self.train_indices = []
+        for i in range(self.cross_valid_k):
+            if i == self._step:
+                self.valid_indices = self.all_indices[self.indices[i]:self.indices[i + 1]]
+            else:
+                self.train_indices += self.all_indices[self.indices[i]:self.indices[i + 1]]
+        
+        self.train_dataset = data.Subset(self, self.train_indices)
+        self.valid_dataset = data.Subset(self, self.valid_indices)
+        
+        self.train_sampler = data.RandomSampler(self.train_dataset)
+        self.valid_sampler = data.SequentialSampler(self.valid_dataset)
+        self.all_sampler = data.SequentialSampler(self)
+
+
 class VOC2012Seg(BaseSegDataset):
-    def __init__(self, root, valid_rate=0.2, transform=None, transform_params=None,
+    def __init__(self, root, valid_rate=0.5, transform=None, transform_params=None,
                  shuffle=False, resume=False, log_dir=None, resize=None):
         self.cmap = self.get_colormap()
         self.resize = resize
@@ -276,4 +345,12 @@ if __name__ == '__main__':
     for batch_idx, (img, label) in enumerate(train_loader):
         imgs, labels, _ = dataset_.vis_transform(imgs=img, labels=label, preds=None, to_plt=True)
         imshow(title='VOC2012Seg', imgs=(imgs[0], labels[0]))
+        break
+
+    root = os.path.expanduser('~/dataset/xVertSeg')
+    dataset_ = xVertSegFold(root, cross_valid_k=4, transform=random_flip_transform)
+    train_loader, _, _ = dataset_.get_dataloader(batch_size=1)
+    for batch_idx, (img, label) in enumerate(train_loader):
+        imgs, labels, _ = dataset_.vis_transform(imgs=img, labels=label, preds=None)
+        imshow(title='xVertSegFold', imgs=(imgs[0], labels[0]))
         break
