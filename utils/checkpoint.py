@@ -11,23 +11,19 @@ def save(epoch, net, optimizer, root):
                 }, root)
 
 
-def load_latest(root):
-    files = glob.glob(root + '*.pth')
+def find_latest(root):
+    files = glob.glob(os.path.join(root, '*.pth'))
     if len(files):
         latest_file = max(files, key=os.path.getctime)
-        latest_checkpoint = torch.load(latest_file)
-        return latest_checkpoint
+        return latest_file
     else:
         raise FileNotFoundError('No checkpoint file in "{}"'.format(root))
 
 
-def load_file(root):
-    checkpoint = torch.load(root)
-    return checkpoint
-
-
-def load_params(root, net, optimizer, device):
-    checkpoint = load_file(root)
+def load_params(root, net, optimizer, device, latest=False):
+    if latest:
+        root = find_latest(root)
+    checkpoint = torch.load(root, map_location=device)
     epoch = checkpoint['epoch'] + 1
     net.load_state_dict(checkpoint['net'])
     optimizer.load_state_dict(checkpoint['optimizer'])
@@ -36,7 +32,3 @@ def load_params(root, net, optimizer, device):
             if isinstance(v, torch.Tensor):
                 state[k] = v.to(device)
     return net, optimizer, epoch
-
-
-if __name__ == '__main__':
-    cp = load_file('./checkpoint/')
