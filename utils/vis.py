@@ -57,7 +57,7 @@ def imshow(title, imgs, shape=None, subtitle=None, cmap=None, transpose=False):
     
     plt.ion()
     plt.show()
-    plt.pause(1)
+    plt.pause(0.001)
 
 
 if __name__ == '__main__':
