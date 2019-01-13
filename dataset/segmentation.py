@@ -93,6 +93,7 @@ class BaseSegDataset(data.Dataset, metaclass=ABCMeta):
             labels = labels.transpose((0, 3, 1, 2))
             if to_plt is True:
                 labels = labels.transpose((0, 2, 3, 1))
+            labels = labels / 255.
         
         if preds is not None:
             if type(preds).__module__ != np.__name__:
@@ -103,6 +104,7 @@ class BaseSegDataset(data.Dataset, metaclass=ABCMeta):
             preds = preds.transpose((0, 3, 1, 2))
             if to_plt is True:
                 preds = preds.transpose((0, 2, 3, 1))
+            preds = preds / 255.
         
         return imgs, labels, preds
     
