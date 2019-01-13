@@ -166,8 +166,7 @@ def validation(dataset, device, net, valid_loader, eval_func, epoch, valid_logge
             vis_imgs, vis_labels, vis_outputs = dataset.vis_transform(imgs, labels, outputs)
             imshow(title='Valid', imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), shape=(1, 3),
                    subtitle=('image', 'label', 'predict'))
-            summary_outputs = torch.argmax(outputs, 1, keepdim=True)
-            valid_logger.add_images('output', summary_outputs, epoch)
+            valid_logger.add_images('output', vis_outputs, epoch)
     
     valid_acc = evaluator.get_acc(eval_func)
     return valid_acc
