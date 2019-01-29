@@ -1,32 +1,26 @@
 import numpy as np
 import pydensecrf.densecrf as dcrf
 
-import utils.checkpoint as cp
-from network.network_zoo import U_Net
-from utils.evaluation import dice_coef
-from utils.vis import *
-
 
 def dense_crf(img, output):
     c, h, w = output.shape
-
+    
     unary = -np.log(output)
     unary = unary.reshape(c, -1)
     unary = np.ascontiguousarray(unary)
-
+    
     img = img.transpose(1, 2, 0)
     img = np.ascontiguousarray(img)
-
+    
     d = dcrf.DenseCRF2D(w, h, c)
-    d.setUnaryEnergy(unary)
-
-    # d.addPairwiseEnergy()
-    d.addPairwiseGaussian(sxy=20, compat=3)
-    d.addPairwiseBilateral(sxy=30, srgb=20, rgbim=img, compat=10)
-
+    d.setUnaryEnergy(unary.astype(np.float32))
+    
+    d.addPairwiseGaussian(sxy=3, compat=3)
+    d.addPairwiseBilateral(sxy=80, srgb=13, rgbim=img, compat=10)
+    
     q = d.inference(5)
     q = np.array(q).reshape(c, h, w)
-
+    
     return q
 
 
@@ -36,12 +30,11 @@ def dense_crf_batch(img, output):
     assert img.shape[0] == output.shape[0]
     batch_size = img.shape[0]
     output_crf = np.zeros_like(output)
-
+    
     for i in range(batch_size):
         output_crf[i] = dense_crf(img[i], output[i])
-
+    
     return output_crf
-
 
 # if __name__ == '__main__':
 #     checkpoint_root = 'E:/Dropbox/Workspace/pytorch/runs/xVertSeg/checkpoint/'

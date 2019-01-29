@@ -5,7 +5,7 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 import torch
 import torchvision.transforms.functional
-from PIL import Image
+from PIL import Image, ImageOps
 from torch.utils import data
 
 import dataset.transform as transform
@@ -195,9 +195,9 @@ class xVertSeg(BaseSegDataset):
 
 class xVertSegFold(xVertSeg):
     def __init__(self, root, cross_valid_k=4, transform=None, transform_params=None,
-                 resume=False, log_dir=None):
+                 resume=False, log_dir=None, step=0):
         self.cross_valid_k = cross_valid_k
-        self._step = 0
+        self._step = step
         super(xVertSeg, self).__init__(root, None, transform, transform_params, None, resume, log_dir)
     
     def cross_valid_step(self, step):
@@ -321,19 +321,19 @@ if __name__ == '__main__':
     
     root = os.path.expanduser('~/dataset/SpineSeg')
     dataset_ = SpineSeg(root=root, shuffle=True, valid_rate=0.2, transform=random_flip_transform)
-    
+
     train_loader, _, _ = dataset_.get_dataloader(batch_size=1)
-    
+
     for batch_idx, (img, label) in enumerate(train_loader):
         imgs, labels, _ = dataset_.vis_transform(imgs=img, labels=label, preds=None)
         imshow(title='SpineSeg', imgs=(imgs[0], labels[0]))
         break
-    
+
     root = os.path.expanduser('~/dataset/xVertSeg')
     dataset_ = xVertSeg(root=root, shuffle=True, valid_rate=0.2, transform=random_flip_transform)
-    
+
     train_loader, _, _ = dataset_.get_dataloader(batch_size=1)
-    
+
     for batch_idx, (img, label) in enumerate(train_loader):
         imgs, labels, _ = dataset_.vis_transform(imgs=img, labels=label, preds=None)
         imshow(title='xVertSeg', imgs=(imgs[0], labels[0]))
@@ -341,8 +341,8 @@ if __name__ == '__main__':
     
     root = os.path.expanduser('~/dataset/VOC2012Seg')
     dataset_ = VOC2012Seg(root=root, shuffle=True, valid_rate=0.2,
-                          transform=random_crop_transform, transform_params=(128, 256))
-    
+                          transform=random_crop_transform, transform_params=(256, 256))
+
     train_loader, _, _ = dataset_.get_dataloader(batch_size=1)
     for batch_idx, (img, label) in enumerate(train_loader):
         imgs, labels, _ = dataset_.vis_transform(imgs=img, labels=label, preds=None, to_plt=True)

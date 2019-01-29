@@ -148,7 +148,7 @@ def evaluation(dataset, device, net, train_loader, eval_func):
         labels = labels.cpu().detach().numpy()
         evaluator.add_batch(outputs, labels)
     
-    train_acc = evaluator.get_acc(eval_func)
+    train_acc = evaluator.eval(eval_func)
     return train_acc
 
 
@@ -168,5 +168,5 @@ def validation(dataset, device, net, valid_loader, eval_func, epoch, valid_logge
                    subtitle=('image', 'label', 'predict'))
             valid_logger.add_images('output', vis_outputs, epoch)
     
-    valid_acc = evaluator.get_acc(eval_func)
+    valid_acc = evaluator.eval(eval_func)
     return valid_acc

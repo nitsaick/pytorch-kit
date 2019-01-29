@@ -25,6 +25,7 @@ def get_args():
     parser.add_option('--dataset-root', dest='dataset_root', default='~/dataset/', help='dataset root')
     parser.add_option('--dataset-name', dest='dataset_name', default='SpineSeg',
                       help='dataset name: SpineSeg, xVertSeg, VOC2012Seg')
+    parser.add_option('--shuffle', dest='shuffle', default=False, help='dataset shuffle')
     parser.add_option('--network', dest='network_name', default='UNet',
                       help='network name: UNet, R2UNet, AttUNet, AttR2UNet, IDANet, TUNet')
     parser.add_option('--base-ch', dest='base_ch', default=64, type='int', help='base channels')
@@ -54,13 +55,13 @@ if __name__ == '__main__':
     for case in switch(args.dataset_name):
         if case('SpineSeg'):
             dataset = SpineSeg(root=dataset_root, valid_rate=0.2, transform=random_flip_transform,
-                               shuffle=False, resume=args.resume_file is not False, log_dir=log_dir)
+                               shuffle=args.shuffle, resume=args.resume_file is not False, log_dir=log_dir)
             criterion = nn.CrossEntropyLoss()
             break
         
         if case('xVertSeg'):
             dataset = xVertSeg(root=dataset_root, valid_rate=0.25, transform=random_flip_transform,
-                               shuffle=False, resume=args.resume_file is not False, log_dir=log_dir)
+                               shuffle=args.shuffle, resume=args.resume_file is not False, log_dir=log_dir)
             criterion = nn.CrossEntropyLoss()
             break
         
@@ -72,7 +73,7 @@ if __name__ == '__main__':
         
         if case('VOC2012Seg'):
             dataset = VOC2012Seg(root=dataset_root, valid_rate=0.5, transform=None, transform_params=None,
-                                 shuffle=False, resume=args.resume_file is not False, log_dir=log_dir,
+                                 shuffle=args.shuffle, resume=args.resume_file is not False, log_dir=log_dir,
                                  resize=(256, 256))
             criterion = nn.CrossEntropyLoss(ignore_index=255)
             break
@@ -115,8 +116,8 @@ if __name__ == '__main__':
                 break
             
             if case('TUNet'):
-                net = network.Tunable_UNet(in_channels=1, n_classes=1, depth=5, wf=6,
-                                           padding=True, batch_norm=True, up_mode='upconv')
+                net = network.Tunable_UNet(in_channels=dataset.img_channels, n_classes=dataset.num_classes,
+                                           depth=5, wf=6, padding=True, batch_norm=True, up_mode='upconv')
                 break
             
             if case():
