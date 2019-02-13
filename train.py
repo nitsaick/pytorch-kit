@@ -8,7 +8,7 @@ import torch.nn as nn
 import network
 import utils.checkpoint as cp
 from dataset.segmentation import *
-from dataset.transform import random_flip_transform
+from dataset.transform import random_flip_transform, mix_transform, mix_transform2
 from train_seg import train_seg
 from utils.switch import *
 
@@ -31,56 +31,56 @@ def get_args():
     parser.add_option('--base-ch', dest='base_ch', default=64, type='int', help='base channels')
     parser.add_option('--eval-epoch', dest='eval_epoch', default=1, type='int', help='eval epoch')
     parser.add_option('--cross-valid', dest='cross_valid_k', default=1, type='int', help='cross valid k')
-    
+
     (options, args) = parser.parse_args()
     return options
 
 
 if __name__ == '__main__':
     args = get_args()
-    
+
     device = 'cpu'
     if args.gpu != -1:
         device = torch.device('cuda:' + str(args.gpu) if torch.cuda.is_available() else 'cpu')
-    
+
     if args.log_name is None:
         args.log_name = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
-    
+
     log_dir = os.path.expanduser(os.path.join(args.log_root, args.log_name))
     dataset_root = os.path.expanduser(os.path.join(args.dataset_root, args.dataset_name))
-    
+
     if args.cross_valid_k > 1:
         args.dataset_name += 'Fold'
-    
+
     for case in switch(args.dataset_name):
         if case('SpineSeg'):
-            dataset = SpineSeg(root=dataset_root, valid_rate=0.2, transform=random_flip_transform,
+            dataset = SpineSeg(root=dataset_root, valid_rate=0.2, transform=mix_transform,
                                shuffle=args.shuffle, resume=args.resume_file is not False, log_dir=log_dir)
             criterion = nn.CrossEntropyLoss()
             break
-        
+
         if case('xVertSeg'):
             dataset = xVertSeg(root=dataset_root, valid_rate=0.25, transform=random_flip_transform,
                                shuffle=args.shuffle, resume=args.resume_file is not False, log_dir=log_dir)
             criterion = nn.CrossEntropyLoss()
             break
-        
+
         if case('xVertSegFold'):
             dataset = xVertSegFold(root=dataset_root, cross_valid_k=args.cross_valid_k, transform=random_flip_transform,
                                    resume=args.resume_file is not False, log_dir=log_dir)
             criterion = nn.CrossEntropyLoss()
             break
-        
+
         if case('VOC2012Seg'):
-            dataset = VOC2012Seg(root=dataset_root, valid_rate=0.5, transform=None, transform_params=None,
+            dataset = VOC2012Seg(root=dataset_root, valid_rate=0.5, transform=mix_transform2, transform_params=None,
                                  shuffle=args.shuffle, resume=args.resume_file is not False, log_dir=log_dir,
                                  resize=(256, 256))
             criterion = nn.CrossEntropyLoss(ignore_index=255)
             break
-        
+
         if case():
             raise AssertionError('Unknown dataset name.')
-    
+
     for step in range(args.cross_valid_k):
         if args.cross_valid_k > 1:
             msg = ' {}-fold cross-validation '.format(args.cross_valid_k)
@@ -91,40 +91,50 @@ if __name__ == '__main__':
             log_dir = os.path.join(log_dir, str(step + 1))
             log_dir = os.path.expanduser(log_dir)
             dataset.cross_valid_step(step)
-        
+
         checkpoint_dir = os.path.join(log_dir, 'checkpoint')
-        
+
         for case in switch(args.network_name):
             if case('UNet'):
                 net = network.UNet(in_ch=dataset.img_channels, out_ch=dataset.num_classes, base_ch=args.base_ch)
                 break
-            
+
             if case('R2UNet'):
                 net = network.R2UNet(in_ch=dataset.img_channels, out_ch=dataset.num_classes, base_ch=args.base_ch)
                 break
-            
+
             if case('AttUNet'):
                 net = network.AttUNet(in_ch=dataset.img_channels, out_ch=dataset.num_classes, base_ch=args.base_ch)
                 break
-            
+
             if case('AttR2UNet'):
                 net = network.AttR2UNet(in_ch=dataset.img_channels, out_ch=dataset.num_classes, base_ch=args.base_ch)
                 break
-            
+
             if case('IDANet'):
                 net = network.IDANet(in_ch=dataset.img_channels, out_ch=dataset.num_classes, base_ch=args.base_ch)
                 break
-            
+
             if case('TUNet'):
                 net = network.Tunable_UNet(in_channels=dataset.img_channels, n_classes=dataset.num_classes,
                                            depth=5, wf=6, padding=True, batch_norm=True, up_mode='upconv')
                 break
-            
+
+            if case('AlbuNet'):
+                net = network.AlbuNet(num_classes=dataset.num_classes, num_filters=32,
+                                      pretrained=True, is_deconv=True)
+                break
+
+            if case('DeepLab'):
+                net = network.DeepLab(backbone='resnet', output_stride=16, num_classes=dataset.num_classes,
+                                      sync_bn=True, freeze_bn=False)
+                break
+
             if case():
                 raise AssertionError('Unknown network name.')
-        
+
         optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
-        
+
         start_epoch = 0
         if args.resume_file:
             try:
@@ -146,8 +156,8 @@ if __name__ == '__main__':
                     return True
                 elif choice in no:
                     return False
-            
-            
+
+
             if os.path.exists(log_dir):
                 files = os.listdir(log_dir)
                 if len(files) >= 3:
@@ -155,7 +165,7 @@ if __name__ == '__main__':
                     if not check(log_dir): break
             else:
                 os.makedirs(log_dir)
-            
+
             if os.path.exists(checkpoint_dir):
                 files = os.listdir(checkpoint_dir)
                 if len(files):
@@ -163,27 +173,27 @@ if __name__ == '__main__':
                     if not check(checkpoint_dir): break
             else:
                 os.makedirs(checkpoint_dir)
-        
+
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.1, patience=5, verbose=True,
             threshold=0.0001, threshold_mode='rel', cooldown=0, min_lr=0, eps=1e-08
         )
-        
+
         try:
             torch.cuda.empty_cache()
             train_seg(net=net, dataset=dataset, optimizer=optimizer, scheduler=scheduler, criterion=criterion,
                       epoch_num=args.epochs, batch_size=args.batch_size, device=device, checkpoint_dir=checkpoint_dir,
                       start_epoch=start_epoch, log_dir=log_dir, eval_epoch=args.eval_epoch)
-        
+
         except KeyboardInterrupt:
             try:
                 latest_checkpoint = cp.load_latest(checkpoint_dir)
                 epoch = latest_checkpoint['epoch']
             except FileNotFoundError:
                 epoch = 0
-            
+
             cp_path = os.path.join(checkpoint_dir, 'INTERRUPTED.pth')
             cp.save(epoch, net, optimizer, cp_path)
-            
+
             print('\nSaved interrupt: {}'.format(cp_path))
             sys.exit(0)

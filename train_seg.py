@@ -20,7 +20,7 @@ def train_seg(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_
         eval_epoch = 1
     if checkpoint_save_epoch < 1:
         checkpoint_save_epoch = 10
-    
+
     train_loader, valid_loader, _ = dataset.get_dataloader(batch_size)
     
     print('{:-^47s}'.format(' Start training '))
@@ -42,10 +42,10 @@ def train_seg(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_
     train_logger = SummaryWriter(train_logger_root)
     valid_logger = SummaryWriter(valid_logger_root)
     
-    dummy_input = torch.zeros_like(dataset.__getitem__(0)[0])
-    dummy_input = dummy_input.view((1,) + dummy_input.shape)
-    train_logger.add_graph(net, dummy_input)
-    train_logger.add_text('detail', msg)
+    # dummy_input = torch.zeros_like(dataset.__getitem__(0)[0])
+    # dummy_input = dummy_input.view((1,) + dummy_input.shape)
+    # train_logger.add_graph(net, dummy_input)
+    # train_logger.add_text('detail', msg)
     
     for batch_idx, (imgs, labels) in enumerate(valid_loader):
         imgs, labels, _ = dataset.vis_transform(imgs, labels, None)
@@ -54,6 +54,7 @@ def train_seg(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_
         break
     
     net = net.to(device)
+    criterion = criterion.to(device)
     
     best_acc = 0.0
     best_epoch = 0
@@ -68,9 +69,9 @@ def train_seg(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_
         print('Learning rate: {}'.format(lr))
         train_logger.add_scalar('lr', lr, epoch)
         
-        if lr < 1e-7:
-            print('Learning rate is less than 1e-7. Stop training.')
-            break
+        # if lr < 1e-7:
+        #     print('Learning rate is less than 1e-7. Stop training.')
+        #     break
         
         # Training phase
         net.train()
@@ -124,7 +125,7 @@ def training(criterion, dataset, device, epoch, net, optimizer, scheduler, train
         
         epoch_loss += loss.item()
         
-        if batch_idx == 0:
+        if batch_idx % 20 == 0:
             outputs = outputs.cpu().detach().numpy().argmax(axis=1)
             imgs, labels, outputs = dataset.vis_transform(imgs, labels, outputs)
             imshow(title='Train', imgs=(imgs[0], labels[0], outputs[0]), shape=(1, 3),
