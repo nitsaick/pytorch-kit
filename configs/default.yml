@@ -1,0 +1,94 @@
+net:
+    unet:
+        base_ch: 64
+
+    r2unet:
+        base_ch: 64
+
+    attunet:
+        base_ch: 64
+
+    attr2unet:
+        base_ch: 64
+
+    idanet:
+        base_ch: 64
+
+    tunet:
+        depth: 5
+        wf: 6
+        padding: True
+        batch_norm: True
+        up_mode: upconv
+
+    albunet:
+        num_filters: 32
+        pretrained: False
+        is_deconv: False
+
+    deeplab:
+        backbone: resnet
+        sync_bn: True
+        freeze_bn: False
+        pretrained: True
+
+dataset:
+    spineseg:
+        valid_rate: 0.2
+
+    xvertseg:
+        valid_rate: 0.2
+
+    voc2012seg: ~
+
+    cityscapes: ~
+
+transform:
+    medical_transform:
+        train: ~
+        valid: ~
+
+    real_world_transform:
+        train:
+            output_size: 256
+            type: train
+        valid:
+            output_size: 256
+            type: valid
+
+    random_flip_transform:
+        train: ~
+        valid: ~
+
+loss:
+    cross_entropy:
+        ignore_index: 255
+
+optimizer:
+    adam:
+        lr: 1.0e-4
+        weight_decay: 0
+
+scheduler:
+    reduce_lr_on_plateau:
+        mode: 'min'
+        factor: 0.1
+        patience: 5
+        verbose: True
+        threshold: 0.0001
+        threshold_mode: 'rel'
+        cooldown: 0
+        min_lr: 0
+        eps: 1e-08
+
+training:
+    device:
+        name: cpu
+    epoch: 1
+    batch_size: 2
+    eval_epoch_interval: 1
+    eval_func: ~
+    checkpoint_epoch_interval: 1
+    visualize_iter_interval: 20
+    num_workers: 0
+    log_name: ~
