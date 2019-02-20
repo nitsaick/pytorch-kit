@@ -7,8 +7,8 @@ from network.decoder import build_decoder
 from network.backbone import build_backbone
 
 class DeepLab(nn.Module):
-    def __init__(self, backbone='resnet', output_stride=16, num_classes=21,
-                 sync_bn=True, freeze_bn=False):
+    def __init__(self, num_classes=21, backbone='resnet', output_stride=16,
+                 sync_bn=True, freeze_bn=False, pretrained=True):
         super(DeepLab, self).__init__()
         if backbone == 'drn':
             output_stride = 8
@@ -18,7 +18,7 @@ class DeepLab(nn.Module):
         else:
             BatchNorm = nn.BatchNorm2d
 
-        self.backbone = build_backbone(backbone, output_stride, BatchNorm)
+        self.backbone = build_backbone(backbone, output_stride, BatchNorm, pretrained)
         self.aspp = build_aspp(backbone, output_stride, BatchNorm)
         self.decoder = build_decoder(num_classes, backbone, BatchNorm)
 

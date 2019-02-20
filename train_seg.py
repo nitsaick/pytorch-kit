@@ -45,7 +45,7 @@ def train_seg(net, dataset, optimizer, scheduler, criterion, epoch_num=5, batch_
     # dummy_input = torch.zeros_like(dataset.__getitem__(0)[0])
     # dummy_input = dummy_input.view((1,) + dummy_input.shape)
     # train_logger.add_graph(net, dummy_input)
-    # train_logger.add_text('detail', msg)
+    train_logger.add_text('detail', msg)
     
     for batch_idx, (imgs, labels) in enumerate(valid_loader):
         imgs, labels, _ = dataset.vis_transform(imgs, labels, None)
