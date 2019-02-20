@@ -24,7 +24,7 @@ def imshow(title, imgs, shape=None, subtitle=None, cmap=None, transpose=False):
         else:
             assert len(cmap) == num
         
-        fig = plt.figure(num=title, figsize=(shape[1] * 3, shape[0] * 3))
+        fig = plt.figure(num=title, figsize=(shape[1] * 3, shape[0] * 3 + 0.5))
         fig.clf()
         fig.suptitle(title)
         

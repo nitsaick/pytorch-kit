@@ -80,9 +80,16 @@ class Evaluator:
                 acc = self.frequency_weighted_intersection_over_union()
                 break
             if case():
-                raise AssertionError('Unknown evaluation function.')
+                raise NotImplementedError('Unknown evaluation function.')
 
         return acc
+
+    def log_acc(self, logger, epoch, prefix=''):
+        logger.add_scalar(prefix + 'dc', (self.dc_acc / self.num)[1], epoch)
+        logger.add_scalar(prefix + 'pixel_accuracy', self.pixel_accuracy(), epoch)
+        logger.add_scalar(prefix + 'pixel_accuracy_class', self.pixel_accuracy_class(), epoch)
+        logger.add_scalar(prefix + 'mIoU', self.mean_intersection_over_union(), epoch)
+        logger.add_scalar(prefix + 'fwIoU', self.frequency_weighted_intersection_over_union(), epoch)
 
 
 if __name__ == '__main__':
