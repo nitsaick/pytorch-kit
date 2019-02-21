@@ -11,6 +11,7 @@ import utils.checkpoint as cp
 from utils.cfg_reader import *
 from utils.metrics import Evaluator
 from utils.vis import imshow
+from utils.func import count_params
 
 from tqdm import tqdm
 
@@ -51,21 +52,23 @@ class Trainer:
             device = 'cuda' + str(self.gpu_ids)
         else:
             device = 'cpu'
-        
-        msg = '''
-                Net: {}
-                Epochs: {}
-                Batch size: {}
-                Learning rate: {}
-                Training size: {}
-                Validation size: {}
-                Device: {}
-                    '''.format(net.__class__.__name__, self.epoch_num, self.batch_size, optimizer.param_groups[0]['lr'],
-                               len(train_loader.sampler), len(valid_loader.sampler), device)
+
+        params = count_params(self.net)
+
+        msg = 'Net: {}\n'.format(self.net.__class__.__name__) + \
+              'Dataset: {}\n'.format(self.dataset.__class__.__name__) + \
+              'Params: {}\n'.format(params) + \
+              'Epochs: {}\n'.format(self.epoch_num) + \
+              'Learning rate: {}\n'.format(optimizer.param_groups[0]['lr']) + \
+              'Batch size: {}\n'.format(self.batch_size) + \
+              'Training size: {}\n'.format(len(train_loader.sampler)) + \
+              'Validation size: {}\n'.format(len(valid_loader.sampler)) + \
+              'Device: {}\n'.format(device)
+
         print(msg)
         self.logger.add_text('detail', msg)
         
-        # dummy_input = torch.zeros_like(dataset.__getitem__(0)[0])
+        self.logger.add_text('params', str(params))
         # dummy_input = dummy_input.view((1,) + dummy_input.shape)
         # train_logger.add_graph(net, dummy_input)
         

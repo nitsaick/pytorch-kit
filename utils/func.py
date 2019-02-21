@@ -8,3 +8,7 @@ def recursive_glob(root='.', suffix=''):
     return [os.path.join(looproot, filename)
             for looproot, _, filenames in os.walk(root)
             for filename in filenames if filename.endswith(suffix)]
+
+
+def count_params(net):
+    return sum([param.nelement() for param in net.parameters()])
