@@ -26,6 +26,7 @@ training:
     visualize_iter_interval: 20
     num_workers: 0
     balanced_weights: False
+    init_weight_func: normal
     log_name: ~
 
 
