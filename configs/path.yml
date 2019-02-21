@@ -1,7 +1,7 @@
 spineseg: ~/dataset/SpineSeg
 voc2012seg: ~/dataset/VOC2012Seg
 xvertseg: ~/dataset/xVertSeg
-cityscapes: D:/pCloud/dataset/Cityscapes
+cityscapes: ~/dataset/Cityscapes
 sbd: ~/dataset/SBD/benchmark_RELEASE
 
 log_root: ~/runs
