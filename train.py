@@ -67,10 +67,15 @@ class Trainer:
 
         print(msg)
         self.logger.add_text('detail', msg)
-        
+
         self.logger.add_text('params', str(params))
-        # dummy_input = dummy_input.view((1,) + dummy_input.shape)
-        # train_logger.add_graph(net, dummy_input)
+
+        try:
+            dummy_input = torch.zeros_like(dataset.__getitem__(0)[0])
+            dummy_input = dummy_input.view((1,) + dummy_input.shape)
+            self.logger.add_graph(net, dummy_input)
+        except RuntimeError:
+            print('Warning: Cannot export net to ONNX, ignore log graph')
         
         for batch_idx, (imgs, labels) in enumerate(valid_loader):
             imgs, labels, _ = self.dataset.vis_transform(imgs, labels, None)
