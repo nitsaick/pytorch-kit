@@ -104,7 +104,14 @@ class Trainer:
             # Training phase
             self.net.train()
             torch.set_grad_enabled(True)
-            loss = self.training(train_loader)
+            
+            try:
+                loss = self.training(train_loader)
+            except KeyboardInterrupt:
+                cp_path = os.path.join(self.checkpoint_dir, 'INTERRUPTED.pth')
+                cp.save(epoch, self.net, self.optimizer, cp_path)
+                return
+                
             self.logger.add_scalar('loss', loss, epoch)
 
             if (epoch + 1) % self.eval_epoch_interval == 0:
