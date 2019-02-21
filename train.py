@@ -12,6 +12,7 @@ from utils.cfg_reader import *
 from utils.metrics import Evaluator
 from utils.vis import imshow
 
+from tqdm import tqdm
 
 class Trainer:
     def __init__(self, net, dataset, optimizer, scheduler, criterion, log_dir, cfg):
@@ -44,7 +45,7 @@ class Trainer:
     def run(self):
         train_loader, valid_loader, _ = self.dataset.get_dataloader(self.batch_size, self.num_workers)
         
-        print('{:-^47s}'.format(' Start training '))
+        print('{:-^40s}'.format(' Start training '))
         
         if self.cuda:
             device = 'cuda' + str(self.gpu_ids)
@@ -80,11 +81,10 @@ class Trainer:
         
         valid_acc = 0.0
         best_acc = 0.0
-        best_epoch = 0
         
         for epoch in range(self.start_epoch, self.epoch_num):
             epoch_str = ' Epoch {}/{} '.format(epoch + 1, self.epoch_num)
-            print('{:-^47s}'.format(epoch_str))
+            print('{:-^40s}'.format(epoch_str))
             
             for param_group in self.optimizer.param_groups:
                 lr = param_group['lr']
@@ -95,8 +95,7 @@ class Trainer:
             # Training phase
             self.net.train()
             torch.set_grad_enabled(True)
-            loss = self.training(train_loader, epoch)
-            print('loss:  {:.5f}'.format(loss))
+            loss = self.training(train_loader)
             self.logger.add_scalar('loss', loss, epoch)
             
             if (epoch + 1) % self.eval_epoch_interval == 0:
@@ -105,10 +104,11 @@ class Trainer:
                 
                 # Evaluation phase
                 train_acc = self.evaluation(train_loader, epoch)
-                print('Train data {} acc:  {:.5f}'.format(self.eval_func, train_acc))
                 
                 # Validation phase
                 valid_acc = self.validation(valid_loader, epoch)
+
+                print('Train data {} acc:  {:.5f}'.format(self.eval_func, train_acc))
                 print('Valid data {} acc:  {:.5f}'.format(self.eval_func, valid_acc))
             
             if valid_acc > best_acc:
@@ -124,11 +124,9 @@ class Trainer:
                 checkpoint_filename = 'cp_{:03d}.pth'.format(epoch + 1)
                 cp.save(epoch, self.net.module, self.optimizer, os.path.join(self.checkpoint_dir, checkpoint_filename))
     
-    def training(self, train_loader, epoch):
-        batch_num = len(train_loader)
-        epoch_loss = 0.0
-        
-        for batch_idx, (imgs, labels) in enumerate(train_loader):
+    def training(self, train_loader):
+        tbar = tqdm(train_loader, ascii=True, desc='train')
+        for batch_idx, (imgs, labels) in enumerate(tbar):
             self.optimizer.zero_grad()
             
             if self.cuda:
@@ -140,24 +138,21 @@ class Trainer:
             loss.backward()
             self.optimizer.step()
             
-            epoch_loss += loss.item()
-            
             if batch_idx % 20 == 0:
                 outputs = outputs.cpu().detach().numpy().argmax(axis=1)
                 imgs, labels, outputs = self.dataset.vis_transform(imgs, labels, outputs)
                 imshow(title='Train', imgs=(imgs[0], labels[0], outputs[0]), shape=(1, 3),
                        subtitle=('image', 'label', 'predict'))
-            
-            if (batch_idx + 1) % 10 == 0 or batch_idx + 1 == batch_num:
-                print('Epoch: {:3d} | Batch: {:5d}/{:<5d} | loss: {:.5f}'
-                      .format(epoch + 1, batch_idx + 1, batch_num, loss.item()))
+
+            tbar.set_postfix(loss='{:.5f}'.format(loss.item()))
         self.scheduler.step(loss.item())
         
         return loss.item()
     
     def evaluation(self, train_loader, epoch):
         evaluator = Evaluator(self.dataset.num_classes)
-        for batch_idx, (imgs, labels) in enumerate(train_loader):
+        tbar = tqdm(train_loader, desc='eval ', ascii=True)
+        for batch_idx, (imgs, labels) in enumerate(tbar):
             if self.cuda:
                 imgs = imgs.cuda()
             
@@ -173,7 +168,8 @@ class Trainer:
     
     def validation(self, valid_loader, epoch):
         evaluator = Evaluator(self.dataset.num_classes)
-        for batch_idx, (imgs, labels) in enumerate(valid_loader):
+        tbar = tqdm(valid_loader, desc='valid', ascii=True)
+        for batch_idx, (imgs, labels) in enumerate(tbar):
             if self.cuda:
                 imgs = imgs.cuda()
             
