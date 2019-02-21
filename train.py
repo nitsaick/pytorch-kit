@@ -208,12 +208,13 @@ def get_args():
 
 if __name__ == '__main__':
     args = get_args()
-    cfg_file = args.config
+    cfg_file = os.path.expanduser(args.config)
     with open(cfg_file) as fp:
         cfg = yaml.load(fp, Loader=yaml.RoundTripLoader)
     
     cfg_check(cfg)
-    
+    print('load config: {}'.format(cfg_file))
+
     path_file = './configs/path.yml'
     with open(path_file) as fp:
         path_cfg = yaml.load(fp, Loader=yaml.Loader)
@@ -235,13 +236,19 @@ if __name__ == '__main__':
     eval_func_check(cfg, dataset)
     
     
-    def check(dir_):
+    def check(path):
         yes = {'yes', 'y', 'ye', ''}
         no = {'no', 'n'}
         choice = input(msg)
         if choice in yes:
-            shutil.rmtree(dir_)
-            os.makedirs(dir_)
+            for file in os.listdir(path):
+                file_path = os.path.join(path, file)
+                try:
+                    if os.path.isfile(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path): shutil.rmtree(file_path)
+                except Exception as e:
+                    print(e)
             return True
         elif choice in no:
             return False
@@ -255,11 +262,11 @@ if __name__ == '__main__':
                 sys.exit(-1)
     else:
         os.makedirs(log_dir)
-    
+
     file = os.path.join(log_dir, 'cfg.yml')
     with open(file, 'w', encoding="utf-8") as fp:
         yaml.dump(cfg, fp, default_flow_style=False, Dumper=yaml.RoundTripDumper)
-    
+
     torch.cuda.empty_cache()
     trainer = Trainer(net, dataset, optimizer, scheduler, criterion, log_dir, cfg)
     trainer.run()
