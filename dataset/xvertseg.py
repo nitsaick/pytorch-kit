@@ -10,6 +10,7 @@ import dataset.transform as transform
 
 class xVertSeg(data.Dataset):
     def __init__(self, root, valid_rate=0.2, train_transform=None, valid_transform=None):
+        self.root = root
         self.imgs, self.labels = self.get_img_list(root)
         
         self.dataset_size = len(self.imgs)

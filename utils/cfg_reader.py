@@ -9,6 +9,8 @@ import dataset
 import network
 from dataset.transform import random_flip_transform, medical_transform, real_world_transform
 from utils.switch import *
+from utils.func import calc_class_weigth
+import numpy as np
 
 __all__ = ['cfg_check', 'gpu_check', 'gpu_check', 'log_name_check',
            'get_transform', 'get_dataset', 'get_criterion', 'get_net',
@@ -112,11 +114,21 @@ def get_dataset(cfg, dataset_root, train_transform, valid_transform):
     return dataset_
 
 
-def get_criterion(cfg):
+def get_criterion(cfg, dataset):
+    if cfg['training']['balanced_weights']:
+        weights_file = os.path.join(dataset.root, 'class_weights.npy')
+        if os.path.isfile(weights_file):
+            weights = np.load(weights_file)
+        else:
+            weights = calc_class_weigth(get_dataset(cfg, dataset.root, None, None))
+        weights = torch.from_numpy(weights.astype(np.float32))
+    else:
+        weights = None
+
     criterion_params = {k: v for k, v in cfg['loss'].items() if k != 'name'}
     for case in switch(cfg['loss']['name'].lower()):
         if case('cross_entropy'):
-            criterion = nn.CrossEntropyLoss(**criterion_params)
+            criterion = nn.CrossEntropyLoss(weight=weights, **criterion_params)
             break
 
         if case():

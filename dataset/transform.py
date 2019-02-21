@@ -32,6 +32,12 @@ def to_tensor(data):
     label = F.to_tensor(label)
     return {'image': image, 'label': label}
 
+def to_numpy(data):
+    image, label = data['image'], data['label']
+    image = np.array(image)
+    label = np.array(label)
+    label = label.reshape((*label.shape, 1))
+    return {'image': image, 'label': label}
 
 def random_flip_transform(data):
     image, label = data['image'], data['label']

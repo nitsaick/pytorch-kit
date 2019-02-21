@@ -10,6 +10,7 @@ from utils.func import recursive_glob
 
 class Cityscapes(data.Dataset):
     def __init__(self, root, train_transform=None, valid_transform=None):
+        self.root = root
         self.imgs, self.labels = self.get_img_list(root)
         
         self.dataset_size = len(self.imgs)
@@ -193,6 +194,8 @@ class Cityscapes(data.Dataset):
             data = self.train_transform(data)
         elif index in self.valid_indices and self.valid_transform is not None:
             data = self.valid_transform(data)
+        else:
+            data = transform.to_numpy(data)
 
         img = data['image']
         label = data['label']

@@ -83,7 +83,9 @@ scheduler:
 
 training:
     device:
-        name: cpu
+        name: gpu
+        ids:
+            - 0
     epoch: 1
     batch_size: 2
     eval_epoch_interval: 1
@@ -91,4 +93,5 @@ training:
     checkpoint_epoch_interval: 1
     visualize_iter_interval: 20
     num_workers: 0
+    balanced_weights: False
     log_name: ~

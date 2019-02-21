@@ -25,7 +25,9 @@ training:
     checkpoint_epoch_interval: 1
     visualize_iter_interval: 20
     num_workers: 0
+    balanced_weights: False
     log_name: ~
+
 
 loss:
     name: cross_entropy

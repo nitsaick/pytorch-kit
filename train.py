@@ -200,7 +200,7 @@ class Trainer:
 
 def get_args():
     parser = ArgumentParser(description="PyTorch Semantic Segmentation Training")
-    parser.add_argument('--config', type=str, default='./configs/unet_spineseg.yml',
+    parser.add_argument('-c', '--config', type=str, default='./configs/unet_spineseg.yml',
                         help='load config file')
     args = parser.parse_args()
     return args
@@ -228,7 +228,7 @@ if __name__ == '__main__':
     valid_transform = get_transform(cfg, 'valid')
     
     dataset = get_dataset(cfg, dataset_root, train_transform, valid_transform)
-    criterion = get_criterion(cfg)
+    criterion = get_criterion(cfg, dataset)
     net = get_net(cfg, dataset)
     optimizer = get_optimizer(cfg, net)
     scheduler = get_scheduler(cfg, optimizer)

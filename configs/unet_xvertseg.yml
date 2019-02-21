@@ -23,6 +23,7 @@ training:
     eval_func: dc
     checkpoint_epoch_interval: 1
     visualize_iter_interval: 20
+    balanced_weights: False
     num_workers: 0
     log_name: ~
 

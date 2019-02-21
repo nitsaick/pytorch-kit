@@ -22,6 +22,7 @@ training:
     eval_func: miou
     checkpoint_epoch_interval: 1
     visualize_iter_interval: 20
+    balanced_weights: True
     num_workers: 0
     log_name: ~
 
