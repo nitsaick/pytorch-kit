@@ -32,7 +32,7 @@ training:
 
 loss:
     name: cross_entropy
-    ignore_index: 255
+    ignore_index: -100
 
 optimizer:
     name: Adam
