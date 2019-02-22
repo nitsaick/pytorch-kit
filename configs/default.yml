@@ -96,3 +96,4 @@ training:
     balanced_weights: False
     init_weight_func: normal
     log_name: ~
+    print_summary: False

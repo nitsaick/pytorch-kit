@@ -1,17 +1,19 @@
+import io
 import os
 import shutil
 import sys
 from argparse import ArgumentParser
+from contextlib import redirect_stdout
 
 import torch
 from ruamel import yaml
 from tensorboardX import SummaryWriter
+from torchsummary import summary
 from tqdm import tqdm
 
 import utils.checkpoint as cp
 from network.init_weights import init_weights
 from utils.cfg_reader import *
-from utils.func import count_params
 from utils.metrics import Evaluator
 from utils.vis import imshow
 
@@ -34,6 +36,7 @@ class Trainer:
         self.visualize_iter_interval = cfg['training']['visualize_iter_interval']
         self.num_workers = cfg['training']['num_workers']
         self.eval_func = cfg['training']['eval_func']
+        self.print_summary = cfg['training']['print_summary']
 
         self.cuda = cfg['training']['device']['name'] == 'gpu'
         if self.cuda:
@@ -54,11 +57,8 @@ class Trainer:
         else:
             device = 'cpu'
 
-        params = count_params(self.net)
-
         msg = 'Net: {}\n'.format(self.net.__class__.__name__) + \
               'Dataset: {}\n'.format(self.dataset.__class__.__name__) + \
-              'Params: {}\n'.format(params) + \
               'Epochs: {}\n'.format(self.epoch_num) + \
               'Learning rate: {}\n'.format(optimizer.param_groups[0]['lr']) + \
               'Batch size: {}\n'.format(self.batch_size) + \
@@ -69,14 +69,21 @@ class Trainer:
         print(msg)
         self.logger.add_text('detail', msg)
 
-        self.logger.add_text('params', str(params))
+        with io.StringIO() as buf, redirect_stdout(buf):
+            summary(self.net, dataset.__getitem__(0)[0].shape, device='cpu')
+            net_summary = buf.getvalue()
+            self.logger.add_text('summary', net_summary)
+            with open(os.path.join(self.log_dir, 'summary.txt'), 'w') as file:
+                file.write(net_summary)
+            if self.print_summary:
+                print(net_summary)
 
         try:
             dummy_input = torch.zeros_like(dataset.__getitem__(0)[0])
             dummy_input = dummy_input.view((1,) + dummy_input.shape)
             self.logger.add_graph(net, dummy_input)
         except RuntimeError:
-            print('Warning: Cannot export net to ONNX, ignore log graph')
+            print('Warning: Cannot export net to ONNX, ignore log graph to tensorboard')
 
         for batch_idx, (imgs, labels) in enumerate(valid_loader):
             imgs, labels, _ = self.dataset.vis_transform(imgs, labels, None)
@@ -104,14 +111,14 @@ class Trainer:
             # Training phase
             self.net.train()
             torch.set_grad_enabled(True)
-            
+
             try:
                 loss = self.training(train_loader)
             except KeyboardInterrupt:
                 cp_path = os.path.join(self.checkpoint_dir, 'INTERRUPTED.pth')
                 cp.save(epoch, self.net, self.optimizer, cp_path)
                 return
-                
+
             self.logger.add_scalar('loss', loss, epoch)
 
             if (epoch + 1) % self.eval_epoch_interval == 0:
