@@ -50,8 +50,6 @@ class Trainer:
     def run(self):
         train_loader, valid_loader, _ = self.dataset.get_dataloader(self.batch_size, self.num_workers)
 
-        print('{:-^40s}'.format(' Start training '))
-
         if self.cuda:
             device = 'cuda' + str(self.gpu_ids)
         else:
@@ -66,11 +64,10 @@ class Trainer:
               'Validation size: {}\n'.format(len(valid_loader.sampler)) + \
               'Device: {}\n'.format(device)
 
-        print(msg)
         self.logger.add_text('detail', msg)
 
         with io.StringIO() as buf, redirect_stdout(buf):
-            summary(self.net, dataset.__getitem__(0)[0].shape, device='cpu')
+            summary(self.net.cuda(), dataset.__getitem__(0)[0].shape, device='cuda')
             net_summary = buf.getvalue()
             self.logger.add_text('summary', net_summary)
             with open(os.path.join(self.log_dir, 'summary.txt'), 'w') as file:
@@ -94,6 +91,9 @@ class Trainer:
         if self.cuda:
             self.net = torch.nn.DataParallel(self.net, device_ids=self.gpu_ids).cuda()
             self.criterion = self.criterion.cuda()
+
+        print('{:-^40s}'.format(' Start training '))
+        print(msg)
 
         valid_acc = 0.0
         best_acc = 0.0

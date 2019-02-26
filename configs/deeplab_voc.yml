@@ -17,7 +17,7 @@ training:
         ids:
             - 0
     epoch: 1
-    batch_size: 10
+    batch_size: 5
     eval_epoch_interval: 1
     eval_func: miou
     checkpoint_epoch_interval: 1

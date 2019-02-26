@@ -45,15 +45,33 @@ dataset:
 
 transform:
     medical_transform:
-        train: ~
-        valid: ~
+        train:
+            output_size: 256
+            scale_range: 0
+            type: train
+        valid:
+            output_size: 256
+            scale_range: 0
+            type: valid
 
     real_world_transform:
         train:
             output_size: 256
+            scale_range: 0.2
             type: train
         valid:
             output_size: 256
+            scale_range: 0.2
+            type: valid
+
+    random_scale_crop:
+        train:
+            output_size: 256
+            scale_range: 0.2
+            type: train
+        valid:
+            output_size: 256
+            scale_range: 0.2
             type: valid
 
     random_flip_transform:

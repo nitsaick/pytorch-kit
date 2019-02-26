@@ -164,8 +164,9 @@ if __name__ == '__main__':
     from dataset.transform import *
     
     root = os.path.expanduser('~/dataset/VOC2012Seg')
-    dataset_ = VOC2012Seg(root=root, train_transform=real_world_transform(output_size=256, type='train'),
-                          valid_transform=real_world_transform(output_size=256, type='valid'))
+    dataset_ = VOC2012Seg(root=root,
+                          train_transform=real_world_transform(output_size=256, scale_range=0.2, type='train'),
+                          valid_transform=real_world_transform(output_size=256, scale_range=0.2, type='valid'))
     
     train_loader, _, _ = dataset_.get_dataloader(batch_size=1)
     for batch_idx, (img, label) in enumerate(train_loader):

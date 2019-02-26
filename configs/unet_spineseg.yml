@@ -9,7 +9,10 @@ dataset:
 transform:
     train:
         name: medical_transform
-
+        output_size:
+            - 128
+            - 256
+        scale_range: 0
     valid:
         name: ~
 

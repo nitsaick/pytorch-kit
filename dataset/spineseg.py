@@ -129,7 +129,9 @@ if __name__ == '__main__':
     from dataset.transform import *
     
     root = os.path.expanduser('~/dataset/SpineSeg')
-    dataset_ = SpineSeg(root=root, valid_rate=0.2, train_transform=medical_transform(), valid_transform=None)
+    dataset_ = SpineSeg(root=root, valid_rate=0.2,
+                        train_transform=medical_transform(output_size=(128, 256), scale_range=0, type='train'),
+                        valid_transform=None)
     
     train_loader, _, _ = dataset_.get_dataloader(batch_size=1)
     

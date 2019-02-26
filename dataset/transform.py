@@ -1,29 +1,27 @@
 from random import random
-from PIL import Image, ImageOps
 
-import torchvision.transforms.functional as F
+import cv2
 import numpy as np
+import torchvision.transforms.functional as F
+from PIL import Image, ImageOps
 from albumentations import (
     PadIfNeeded,
     HorizontalFlip,
     VerticalFlip,
     CenterCrop,
-    Crop,
     Compose,
-    Transpose,
-    RandomRotate90,
-    ElasticTransform,
     GridDistortion,
     OpticalDistortion,
-    RandomSizedCrop,
+    RandomCrop,
     OneOf,
     CLAHE,
     RandomBrightnessContrast,
     RandomGamma,
+    RandomScale
 )
-from albumentations.pytorch import ToTensor
 
-__all__ = ['to_tensor', 'random_flip_transform', 'random_crop_transform', 'medical_transform', 'real_world_transform']
+__all__ = ['to_tensor', 'random_flip_transform', 'random_crop_transform', 'random_scale_crop',
+           'medical_transform', 'real_world_transform']
 
 
 def to_tensor(data):
@@ -32,6 +30,7 @@ def to_tensor(data):
     label = F.to_tensor(label)
     return {'image': image, 'label': label}
 
+
 def to_numpy(data):
     image, label = data['image'], data['label']
     image = np.array(image)
@@ -39,27 +38,28 @@ def to_numpy(data):
     label = label.reshape((*label.shape, 1))
     return {'image': image, 'label': label}
 
+
 def random_flip_transform(data):
     image, label = data['image'], data['label']
-    
+
     # Random horizontal flipping
     if random() > 0.5:
         image = F.hflip(image)
         label = F.hflip(label)
-    
+
     # Random vertical flipping
     if random() > 0.5:
         image = F.vflip(image)
         label = F.vflip(label)
-    
+
     if random() > 0.5:
         gamma = random() * 1 + 0.5
         image = F.adjust_gamma(image, gamma)
-    
+
     if random() > 0.5:
         contrast_factor = random() * 1 + 0.5
         image = F.adjust_contrast(image, contrast_factor)
-    
+
     if random() > 0.5:
         angle = random() * 20 - 10
         translate = (0, 0)
@@ -67,9 +67,9 @@ def random_flip_transform(data):
         shear = 0
         image = F.affine(image, angle, translate, scale, shear)
         label = F.affine(label, angle, translate, scale, shear)
-    
+
     data = {'image': image, 'label': label}
-    
+
     return data
 
 
@@ -79,34 +79,88 @@ def random_crop_transform(img, label, transform_params):
     padw = height - width if height > width else 0
     img = ImageOps.expand(img, border=(padw // 2, padh // 2, padw // 2, padh // 2), fill=0)
     label = ImageOps.expand(label, border=(padw // 2, padh // 2, padw // 2, padh // 2), fill=0)
-    
+
     oh, ow = transform_params
     img = img.resize((ow, oh), Image.BILINEAR)
     label = label.resize((ow, oh), Image.NEAREST)
-    
+
     img, label = random_flip_transform(img, label, transform_params)
     return img, label
 
 
-class medical_transform:
-    def __init__(self):
-        pass
+class random_scale_crop:
+    def __init__(self, output_size, scale_range=0.1, type='train'):
+        if isinstance(output_size, (tuple, list)):
+            self.output_size = output_size  # (h, w)
+        else:
+            self.output_size = (output_size, output_size)
+
+        self.scale_range = scale_range
+        self.type = type
 
     def __call__(self, data):
-        image, label = data['image'], data['label']
-        
-        image = np.array(image)
+        img, label = data['image'], data['label']
+
+        img = np.array(img)
         label = np.array(label)
-        
-        height, width = image.shape[:2]
-        min_v = min(height, width)
-        
+
+        img_size = img.shape[0] if img.shape[0] < img.shape[1] else img.shape[1]
+        crop_size = self.output_size[0] if self.output_size[0] < self.output_size[1] else self.output_size[1]
+        scale = crop_size / img_size - 1
+        if scale < 0:
+            scale_limit = (scale - self.scale_range, scale + self.scale_range)
+        else:
+            scale_limit = (-self.scale_range, scale + self.scale_range)
+
+        if self.type == 'train':
+            aug = Compose([
+                RandomScale(scale_limit=scale_limit, p=1),
+                PadIfNeeded(min_height=self.output_size[0], min_width=self.output_size[1],
+                            border_mode=cv2.BORDER_CONSTANT, value=[0, 0, 0]),
+                OneOf([
+                    RandomCrop(height=self.output_size[0], width=self.output_size[1], p=1),
+                    CenterCrop(height=self.output_size[0], width=self.output_size[1], p=1)
+                ], p=1),
+            ])
+        elif self.type == 'valid':
+            aug = Compose([
+                PadIfNeeded(min_height=self.output_size[0], min_width=self.output_size[1],
+                            border_mode=cv2.BORDER_CONSTANT, value=[0, 0, 0]),
+                CenterCrop(height=self.output_size[0], width=self.output_size[1], p=1)
+            ])
+
+        data = aug(image=img, mask=label)
+        img, label = data['image'], data['mask']
+
+        if len(img.shape) == 2:
+            img = img.reshape((*img.shape, 1))
+        if len(label.shape) == 2:
+            label = label.reshape((*label.shape, 1))
+
+        data = {'image': img, 'label': label}
+        return data
+
+
+class medical_transform:
+    def __init__(self, output_size, scale_range, type):
+        if isinstance(output_size, (tuple, list)):
+            self.size = output_size  # (h, w)
+        else:
+            self.size = (output_size, output_size)
+
+        self.scale_range = scale_range
+        self.type = type
+
+    def __call__(self, data):
+        aug = random_scale_crop(output_size=self.size, scale_range=self.scale_range, type=self.type)
+        data = aug(data)
+
+        img, label = data['image'], data['label']
+
+        img = np.array(img)
+        label = np.array(label)
+
         aug = Compose([
-            OneOf([
-                RandomSizedCrop(min_max_height=(min_v // 1.2, min_v), height=height, width=width,
-                                w2h_ratio=width / height, p=0.5),
-                PadIfNeeded(min_height=height, min_width=width, p=0.5)
-            ], p=1),
             VerticalFlip(p=0.5),
             HorizontalFlip(p=0.5),
             OneOf([
@@ -116,62 +170,52 @@ class medical_transform:
             RandomBrightnessContrast(p=0.5),
             RandomGamma(p=0.5)
         ])
-        
-        data = aug(image=image, mask=label)
-        image, label = data['image'], data['mask']
-        
-        image = image.reshape((*image.shape, 1))
-        label = label.reshape((*label.shape, 1))
-        
-        data = {'image': image, 'label': label}
-        
+
+        data = aug(image=img, mask=label)
+        img, label = data['image'], data['mask']
+
+        if len(img.shape) == 2:
+            img = img.reshape((*img.shape, 1))
+        if len(label.shape) == 2:
+            label = label.reshape((*label.shape, 1))
+
+        data = {'image': img, 'label': label}
         return data
 
 
 class real_world_transform:
-    def __init__(self, output_size, type):
-        self.size = output_size
-        self.type = type
-    
-    def __call__(self, data):
-        img, label = data['image'], data['label']
-        
-        crop_size = self.size
-        outsize = crop_size
-        short_size = outsize
-        w, h = img.size
-        if w > h:
-            oh = short_size
-            ow = int(1.0 * w * oh / h)
+    def __init__(self, output_size, scale_range, type):
+        if isinstance(output_size, (tuple, list)):
+            self.size = output_size  # (h, w)
         else:
-            ow = short_size
-            oh = int(1.0 * h * ow / w)
-        img = img.resize((ow, oh), Image.BILINEAR)
-        label = label.resize((ow, oh), Image.NEAREST)
-        
+            self.size = (output_size, output_size)
+
+        self.scale_range = scale_range
+        self.type = type
+
+    def __call__(self, data):
+        aug = random_scale_crop(output_size=self.size, scale_range=self.scale_range, type=self.type)
+        data = aug(data)
+
+        img, label = data['image'], data['label']
+
         img = np.array(img)
         label = np.array(label)
-        
-        if self.type == 'train':
-            aug = Compose([
-                OneOf([
-                    RandomSizedCrop(min_max_height=(crop_size // 1.2, crop_size), height=crop_size, width=crop_size,
-                                    w2h_ratio=1, p=1),
-                    CenterCrop(p=1, height=crop_size, width=crop_size)
-                ], p=1),
-                HorizontalFlip(p=0.5),
-                CLAHE(p=0.5),
-                RandomBrightnessContrast(p=0.5),
-                RandomGamma(p=0.5)
-            ])
-        elif self.type == 'valid':
-            aug = CenterCrop(p=1, height=crop_size, width=crop_size)
-        
+
+        aug = Compose([
+            HorizontalFlip(p=0.25),
+            CLAHE(p=0.25),
+            RandomBrightnessContrast(p=0.25),
+            RandomGamma(p=0.25)
+        ])
+
         data = aug(image=img, mask=label)
         img, label = data['image'], data['mask']
-        
-        label = label.reshape((*label.shape, 1))
-        
+
+        if len(img.shape) == 2:
+            img = img.reshape((*img.shape, 1))
+        if len(label.shape) == 2:
+            label = label.reshape((*label.shape, 1))
+
         data = {'image': img, 'label': label}
-        
         return data
