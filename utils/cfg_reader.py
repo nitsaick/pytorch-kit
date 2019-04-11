@@ -80,7 +80,7 @@ def get_transform(cfg, type):
     return transform
 
 
-def get_dataset(cfg, dataset_root, train_transform, valid_transform):
+def get_dataset(cfg, dataset_root, distributed, train_transform, valid_transform):
     assert os.path.exists(dataset_root), '{} does not exist'.format(dataset_root)
 
     for case in switch(cfg['dataset']['name'].lower()):
@@ -97,13 +97,13 @@ def get_dataset(cfg, dataset_root, train_transform, valid_transform):
             break
 
         if case('voc2012seg'):
-            dataset_ = dataset.VOC2012Seg(root=dataset_root,
+            dataset_ = dataset.VOC2012Seg(root=dataset_root, distributed=distributed,
                                           train_transform=train_transform,
                                           valid_transform=valid_transform)
             break
 
         if case('cityscapes'):
-            dataset_ = dataset.Cityscapes(root=dataset_root,
+            dataset_ = dataset.Cityscapes(root=dataset_root, distributed=distributed,
                                           train_transform=train_transform,
                                           valid_transform=valid_transform)
             break
