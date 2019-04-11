@@ -1,25 +1,20 @@
-import io
-import os
 import shutil
 import sys
 from argparse import ArgumentParser
-from contextlib import redirect_stdout
 
 import torch
 from ruamel import yaml
 from tensorboardX import SummaryWriter
-from torchsummary import summary
-from tqdm import tqdm
 
 import utils.checkpoint as cp
-from network.init_weights import init_weights
 from utils.cfg_reader import *
+from utils.func import *
 from utils.metrics import Evaluator
 from utils.vis import imshow
-
+import pathlib
 
 class Trainer:
-    def __init__(self, net, dataset, optimizer, scheduler, criterion, log_dir, cfg):
+    def __init__(self, net, dataset, optimizer, scheduler, criterion, start_epoch, log_dir, cfg):
         self.net = net
         self.dataset = dataset
         self.optimizer = optimizer
@@ -29,7 +24,7 @@ class Trainer:
 
         self.checkpoint_dir = os.path.join(log_dir, 'checkpoint')
         self.epoch_num = cfg['training']['epoch']
-        self.start_epoch = 0
+        self.start_epoch = start_epoch
         self.batch_size = cfg['training']['batch_size']
         self.eval_epoch_interval = cfg['training']['eval_epoch_interval']
         self.checkpoint_epoch_interval = cfg['training']['checkpoint_epoch_interval']
@@ -48,52 +43,20 @@ class Trainer:
             os.makedirs(self.checkpoint_dir)
 
     def run(self):
-        train_loader, valid_loader, _ = self.dataset.get_dataloader(self.batch_size, self.num_workers)
+        train_loader, valid_loader, _ = self.dataset.get_dataloader(self.batch_size, self.num_workers, pin_memory=True)
 
-        if self.cuda:
-            device = 'cuda' + str(self.gpu_ids)
-        else:
-            device = 'cpu'
-
-        msg = 'Net: {}\n'.format(self.net.__class__.__name__) + \
-              'Dataset: {}\n'.format(self.dataset.__class__.__name__) + \
-              'Epochs: {}\n'.format(self.epoch_num) + \
-              'Learning rate: {}\n'.format(optimizer.param_groups[0]['lr']) + \
-              'Batch size: {}\n'.format(self.batch_size) + \
-              'Training size: {}\n'.format(len(train_loader.sampler)) + \
-              'Validation size: {}\n'.format(len(valid_loader.sampler)) + \
-              'Device: {}\n'.format(device)
-
-        self.logger.add_text('detail', msg)
-
-        with io.StringIO() as buf, redirect_stdout(buf):
-            summary(self.net.cuda(), dataset.__getitem__(0)[0].shape, device='cuda')
-            net_summary = buf.getvalue()
-            self.logger.add_text('summary', net_summary)
-            with open(os.path.join(self.log_dir, 'summary.txt'), 'w') as file:
-                file.write(net_summary)
-            if self.print_summary:
-                print(net_summary)
-
-        try:
-            dummy_input = torch.zeros_like(dataset.__getitem__(0)[0])
-            dummy_input = dummy_input.view((1,) + dummy_input.shape)
-            self.logger.add_graph(net, dummy_input)
-        except RuntimeError:
-            print('Warning: Cannot export net to ONNX, ignore log graph to tensorboard')
-
-        for batch_idx, (imgs, labels) in enumerate(valid_loader):
-            imgs, labels, _ = self.dataset.vis_transform(imgs, labels, None)
-            self.logger.add_images('image', imgs, 0)
-            self.logger.add_images('label', labels, 0)
-            break
+        self.log_info(valid_loader)
 
         if self.cuda:
             self.net = torch.nn.DataParallel(self.net, device_ids=self.gpu_ids).cuda()
             self.criterion = self.criterion.cuda()
+            for state in self.optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.cuda()
 
         print('{:-^40s}'.format(' Start training '))
-        print(msg)
+        self.show_train_info(train_loader, valid_loader)
 
         valid_acc = 0.0
         best_acc = 0.0
@@ -147,6 +110,43 @@ class Trainer:
                 checkpoint_filename = 'cp_{:03d}.pth'.format(epoch + 1)
                 cp.save(epoch, self.net.module, self.optimizer, os.path.join(self.checkpoint_dir, checkpoint_filename))
 
+    def show_train_info(self, train_loader, valid_loader):
+        if self.cuda:
+            device = 'cuda' + str(self.gpu_ids)
+        else:
+            device = 'cpu'
+        msg = 'Net: {}\n'.format(self.net.__class__.__name__) + \
+              'Dataset: {}\n'.format(self.dataset.__class__.__name__) + \
+              'Epochs: {}\n'.format(self.epoch_num) + \
+              'Learning rate: {}\n'.format(optimizer.param_groups[0]['lr']) + \
+              'Batch size: {}\n'.format(self.batch_size) + \
+              'Training size: {}\n'.format(len(train_loader.sampler)) + \
+              'Validation size: {}\n'.format(len(valid_loader.sampler)) + \
+              'Device: {}\n'.format(device)
+        print(msg)
+        self.logger.add_text('detail', msg)
+
+    def log_info(self, valid_loader):
+        net_summary_text = net_summary(self.net, self.dataset)
+        self.logger.add_text('summary', net_summary_text)
+        with open(os.path.join(self.log_dir, 'summary.txt'), 'w') as file:
+            file.write(net_summary_text)
+        if self.print_summary:
+            print(net_summary_text)
+
+        try:
+            dummy_input = torch.zeros_like(self.dataset.__getitem__(0)[0])
+            dummy_input = dummy_input.view((1,) + dummy_input.shape)
+            self.logger.add_graph(net, dummy_input)
+        except RuntimeError:
+            print('Warning: Cannot export net to ONNX, ignore log graph to tensorboard')
+
+        for batch_idx, (imgs, labels) in enumerate(valid_loader):
+            imgs, labels, _ = self.dataset.vis_transform(imgs, labels, None)
+            self.logger.add_images('image', imgs, 0)
+            self.logger.add_images('label', labels, 0)
+            break
+
     def training(self, train_loader):
         tbar = tqdm(train_loader, ascii=True, desc='train')
         for batch_idx, (imgs, labels) in enumerate(tbar):
@@ -161,7 +161,7 @@ class Trainer:
             loss.backward()
             self.optimizer.step()
 
-            if batch_idx % 20 == 0:
+            if self.visualize_iter_interval > 0 and batch_idx % self.visualize_iter_interval == 0:
                 outputs = outputs.cpu().detach().numpy().argmax(axis=1)
                 imgs, labels, outputs = self.dataset.vis_transform(imgs, labels, outputs)
                 imshow(title='Train', imgs=(imgs[0], labels[0], outputs[0]), shape=(1, 3),
@@ -217,13 +217,23 @@ def get_args():
     parser = ArgumentParser(description="PyTorch Semantic Segmentation Training")
     parser.add_argument('-c', '--config', type=str, default='./configs/unet_spineseg.yml',
                         help='load config file')
+    parser.add_argument('-r', '--resume', type=str, default=None,
+                        help='resume checkpoint')
     args = parser.parse_args()
     return args
 
 
 if __name__ == '__main__':
     args = get_args()
-    cfg_file = os.path.expanduser(args.config)
+
+    if not args.resume:
+        cfg_file = args.config
+    else:
+        cp_file = pathlib.Path(args.resume).expanduser()
+        cfg_file = cp_file.parents[1] / 'cfg.yml'
+        assert cp_file.is_file() and cfg_file.is_file()
+
+    cfg_file = os.path.expanduser(cfg_file)
     with open(cfg_file) as fp:
         cfg = yaml.load(fp, Loader=yaml.RoundTripLoader)
 
@@ -250,8 +260,7 @@ if __name__ == '__main__':
 
     eval_func_check(cfg, dataset)
 
-    init_weights(net, cfg['training']['init_weight_func'])
-
+    # init_weights(net, cfg['training']['init_weight_func'])
 
     def check(path):
         yes = {'yes', 'y', 'ye', ''}
@@ -271,20 +280,25 @@ if __name__ == '__main__':
         elif choice in no:
             return False
 
+    if not args.resume:
+        if os.path.exists(log_dir):
+            files = os.listdir(log_dir)
+            if len(files) >= 3:
+                msg = '"{}" has old log file. Do you want to delete? (y/n) '.format(log_dir)
+                if not check(log_dir):
+                    sys.exit(-1)
+        else:
+            os.makedirs(log_dir)
+        start_epoch = 0
 
-    if os.path.exists(log_dir):
-        files = os.listdir(log_dir)
-        if len(files) >= 3:
-            msg = '"{}" has old log file. Do you want to delete? (y/n) '.format(log_dir)
-            if not check(log_dir):
-                sys.exit(-1)
     else:
-        os.makedirs(log_dir)
+
+        net, optimizer, start_epoch = cp.load_params(net, optimizer, root=cp_file)
 
     file = os.path.join(log_dir, 'cfg.yml')
-    with open(file, 'w', encoding="utf-8") as fp:
+    with open(file, 'w', encoding='utf-8') as fp:
         yaml.dump(cfg, fp, default_flow_style=False, Dumper=yaml.RoundTripDumper)
 
     torch.cuda.empty_cache()
-    trainer = Trainer(net, dataset, optimizer, scheduler, criterion, log_dir, cfg)
+    trainer = Trainer(net, dataset, optimizer, scheduler, criterion, start_epoch, log_dir, cfg)
     trainer.run()
