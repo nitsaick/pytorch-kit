@@ -28,7 +28,7 @@ net:
 
     deeplab:
         backbone: resnet
-        sync_bn: True
+        sync_bn: False
         freeze_bn: False
         pretrained: True
 
