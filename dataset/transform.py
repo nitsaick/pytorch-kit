@@ -160,19 +160,19 @@ class medical_transform:
         img = np.array(img)
         label = np.array(label)
 
-        aug = Compose([
-            VerticalFlip(p=0.5),
-            HorizontalFlip(p=0.5),
-            OneOf([
-                GridDistortion(p=1),
-                OpticalDistortion(p=1, distort_limit=1, shift_limit=10)
-            ], p=0.5),
-            RandomBrightnessContrast(p=0.5),
-            RandomGamma(p=0.5)
-        ])
-
-        data = aug(image=img, mask=label)
-        img, label = data['image'], data['mask']
+        if self.type == 'train':
+            aug = Compose([
+                VerticalFlip(p=0.5),
+                HorizontalFlip(p=0.5),
+                OneOf([
+                    GridDistortion(p=1),
+                    OpticalDistortion(p=1, distort_limit=1, shift_limit=10)
+                ], p=0.5),
+                RandomBrightnessContrast(p=0.5),
+                RandomGamma(p=0.5)
+            ])
+            data = aug(image=img, mask=label)
+            img, label = data['image'], data['mask']
 
         if len(img.shape) == 2:
             img = img.reshape((*img.shape, 1))
@@ -202,15 +202,15 @@ class real_world_transform:
         img = np.array(img)
         label = np.array(label)
 
-        aug = Compose([
-            HorizontalFlip(p=0.25),
-            CLAHE(p=0.25),
-            RandomBrightnessContrast(p=0.25),
-            RandomGamma(p=0.25)
-        ])
-
-        data = aug(image=img, mask=label)
-        img, label = data['image'], data['mask']
+        if self.type == 'train':
+            aug = Compose([
+                HorizontalFlip(p=0.25),
+                CLAHE(p=0.25),
+                RandomBrightnessContrast(p=0.25),
+                RandomGamma(p=0.25)
+            ])
+            data = aug(image=img, mask=label)
+            img, label = data['image'], data['mask']
 
         if len(img.shape) == 2:
             img = img.reshape((*img.shape, 1))

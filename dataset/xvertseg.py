@@ -36,12 +36,13 @@ class xVertSeg(data.Dataset):
         self.valid_sampler = data.SequentialSampler(self.valid_dataset)
         self.test_sampler = data.SequentialSampler(self)
     
-    def get_dataloader(self, batch_size=1, num_workers=0):
-        train_loader = data.DataLoader(self.train_dataset, batch_size=batch_size,
-                                       sampler=self.train_sampler, num_workers=num_workers)
-        valid_loader = data.DataLoader(self.valid_dataset, batch_size=batch_size,
-                                       sampler=self.valid_sampler, num_workers=num_workers)
-        test_loader = data.DataLoader(self, batch_size=batch_size, sampler=self.test_sampler, num_workers=num_workers)
+    def get_dataloader(self, batch_size=1, num_workers=0, pin_memory=False):
+        train_loader = data.DataLoader(self.train_dataset, batch_size=batch_size, sampler=self.train_sampler,
+                                       num_workers=num_workers, pin_memory=pin_memory)
+        valid_loader = data.DataLoader(self.valid_dataset, batch_size=batch_size, sampler=self.valid_sampler,
+                                       num_workers=num_workers, pin_memory=pin_memory)
+        test_loader = data.DataLoader(self, batch_size=batch_size, sampler=self.test_sampler,
+                                      num_workers=num_workers, pin_memory=pin_memory)
         return train_loader, valid_loader, test_loader
     
     def get_img_list(self, root):

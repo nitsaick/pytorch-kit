@@ -8,7 +8,7 @@ import dataset.transform as transform
 
 
 class VOC2012Seg(data.Dataset):
-    def __init__(self, root, train_transform=None, valid_transform=None):
+    def __init__(self, root, distributed=False, train_transform=None, valid_transform=None):
         self.root = root
         self.imgs, self.labels = self.get_img_list(root)
         
@@ -20,7 +20,7 @@ class VOC2012Seg(data.Dataset):
         self.train_transform = train_transform
         self.valid_transform = valid_transform
         
-        self._split()
+        self._split(distributed)
         
         self.img_channels = self.__getitem__(0)[0].shape[0]
     
@@ -52,20 +52,24 @@ class VOC2012Seg(data.Dataset):
         
         return imgs, labels
     
-    def _split(self):
+    def _split(self, distributed):
         self.train_dataset = data.Subset(self, self.train_indices)
         self.valid_dataset = data.Subset(self, self.valid_indices)
-        
-        self.train_sampler = data.RandomSampler(self.train_dataset)
+
+        if distributed:
+            self.train_sampler = data.distributed.DistributedSampler(self.train_dataset)
+        else:
+            self.train_sampler = data.RandomSampler(self.train_dataset)
         self.valid_sampler = data.SequentialSampler(self.valid_dataset)
         self.test_sampler = data.SequentialSampler(self)
     
-    def get_dataloader(self, batch_size=1, num_workers=0):
-        train_loader = data.DataLoader(self.train_dataset, batch_size=batch_size,
-                                       sampler=self.train_sampler, num_workers=num_workers)
-        valid_loader = data.DataLoader(self.valid_dataset, batch_size=batch_size,
-                                       sampler=self.valid_sampler, num_workers=num_workers)
-        test_loader = data.DataLoader(self, batch_size=batch_size, sampler=self.test_sampler, num_workers=num_workers)
+    def get_dataloader(self, batch_size=1, num_workers=0, pin_memory=False):
+        train_loader = data.DataLoader(self.train_dataset, batch_size=batch_size, sampler=self.train_sampler,
+                                       num_workers=num_workers, pin_memory=pin_memory)
+        valid_loader = data.DataLoader(self.valid_dataset, batch_size=batch_size, sampler=self.valid_sampler,
+                                       num_workers=num_workers, pin_memory=pin_memory)
+        test_loader = data.DataLoader(self, batch_size=batch_size, sampler=self.test_sampler,
+                                      num_workers=num_workers, pin_memory=pin_memory)
         return train_loader, valid_loader, test_loader
     
     def get_colormap(self, normalized=False):
