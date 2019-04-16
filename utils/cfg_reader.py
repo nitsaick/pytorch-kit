@@ -80,7 +80,7 @@ def get_transform(cfg, type):
     return transform
 
 
-def get_dataset(cfg, dataset_root, distributed, train_transform, valid_transform):
+def get_dataset(cfg, dataset_root, train_transform, valid_transform, distributed=False):
     assert os.path.exists(dataset_root), '{} does not exist'.format(dataset_root)
 
     for case in switch(cfg['dataset']['name'].lower()):
