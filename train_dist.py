@@ -1,8 +1,11 @@
+import pathlib
 import shutil
 import sys
 from argparse import ArgumentParser
 
+import apex
 import torch
+from apex.parallel import DistributedDataParallel
 from ruamel import yaml
 from tensorboardX import SummaryWriter
 
@@ -11,16 +14,17 @@ from utils.cfg_reader import *
 from utils.func import *
 from utils.metrics import Evaluator
 from utils.vis import imshow
-import pathlib
+
 
 class Trainer:
-    def __init__(self, net, dataset, optimizer, scheduler, criterion, start_epoch, log_dir, cfg):
+    def __init__(self, net, dataset, optimizer, scheduler, criterion, start_epoch, log_dir, enable_log, cfg):
         self.net = net
         self.dataset = dataset
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.criterion = criterion
         self.log_dir = log_dir
+        self.enable_log = enable_log
 
         self.checkpoint_dir = os.path.join(log_dir, 'checkpoint')
         self.epoch_num = cfg['training']['epoch']
@@ -37,18 +41,18 @@ class Trainer:
         if self.cuda:
             self.gpu_ids = cfg['training']['device']['ids']
 
-        self.logger = SummaryWriter(log_dir)
-
-        if not os.path.exists(self.checkpoint_dir):
-            os.makedirs(self.checkpoint_dir)
+        if self.enable_log:
+            self.logger = SummaryWriter(log_dir)
+            if not os.path.exists(self.checkpoint_dir):
+                os.makedirs(self.checkpoint_dir)
 
     def run(self):
         train_loader, valid_loader, _ = self.dataset.get_dataloader(self.batch_size, self.num_workers, pin_memory=True)
 
-        self.log_info(valid_loader)
+        if self.enable_log:
+            self.log_info(valid_loader)
 
         if self.cuda:
-            self.net = torch.nn.DataParallel(self.net, device_ids=self.gpu_ids).cuda()
             self.criterion = self.criterion.cuda()
             for state in self.optimizer.state.values():
                 for k, v in state.items():
@@ -69,22 +73,25 @@ class Trainer:
                 lr = param_group['lr']
                 break
             print('Learning rate: {}'.format(lr))
-            self.logger.add_scalar('lr', lr, epoch)
+            if self.enable_log:
+                self.logger.add_scalar('lr', lr, epoch)
 
             # Training phase
             self.net.train()
             torch.set_grad_enabled(True)
 
             try:
+                self.dataset.train_sampler.set_epoch(epoch)
                 loss = self.training(train_loader)
             except KeyboardInterrupt:
-                cp_path = os.path.join(self.checkpoint_dir, 'INTERRUPTED.pth')
-                cp.save(epoch, self.net, self.optimizer, cp_path)
+                if self.enable_log:
+                    cp_path = os.path.join(self.checkpoint_dir, 'INTERRUPTED.pth')
+                    cp.save(epoch, self.net, self.optimizer, cp_path)
                 return
 
-            self.logger.add_scalar('loss', loss, epoch)
+            if enable_log: self.logger.add_scalar('loss', loss, epoch)
 
-            if (epoch + 1) % self.eval_epoch_interval == 0:
+            if enable_log and (epoch + 1) % self.eval_epoch_interval == 0:
                 self.net.eval()
                 torch.set_grad_enabled(False)
 
@@ -97,18 +104,18 @@ class Trainer:
                 print('Train data {} acc:  {:.5f}'.format(self.eval_func, train_acc))
                 print('Valid data {} acc:  {:.5f}'.format(self.eval_func, valid_acc))
 
-            if valid_acc > best_acc:
-                best_acc = valid_acc
-                best_epoch = epoch
-                checkpoint_filename = 'best.pth'
-                cp.save(epoch, self.net, self.optimizer, os.path.join(self.checkpoint_dir, checkpoint_filename))
-                print('Update best acc!')
-                self.logger.add_scalar('best epoch', best_epoch, 0)
-                self.logger.add_scalar('best acc', best_acc, 0)
+                if valid_acc > best_acc:
+                    best_acc = valid_acc
+                    best_epoch = epoch
+                    checkpoint_filename = 'best.pth'
+                    cp.save(epoch, self.net, self.optimizer, os.path.join(self.checkpoint_dir, checkpoint_filename))
+                    print('Update best acc!')
+                    self.logger.add_scalar('best epoch', best_epoch, 0)
+                    self.logger.add_scalar('best acc', best_acc, 0)
 
-            if (epoch + 1) % self.checkpoint_epoch_interval == 0:
-                checkpoint_filename = 'cp_{:03d}.pth'.format(epoch + 1)
-                cp.save(epoch, self.net.module, self.optimizer, os.path.join(self.checkpoint_dir, checkpoint_filename))
+                if (epoch + 1) % self.checkpoint_epoch_interval == 0:
+                    checkpoint_filename = 'cp_{:03d}.pth'.format(epoch + 1)
+                    cp.save(epoch, self.net.module, self.optimizer, os.path.join(self.checkpoint_dir, checkpoint_filename))
 
     def show_train_info(self, train_loader, valid_loader):
         if self.cuda:
@@ -124,15 +131,17 @@ class Trainer:
               'Validation size: {}\n'.format(len(valid_loader.sampler)) + \
               'Device: {}\n'.format(device)
         print(msg)
-        self.logger.add_text('detail', msg)
+
+        if enable_log:
+            self.logger.add_text('detail', msg)
 
     def log_info(self, valid_loader):
-        net_summary_text = net_summary(self.net, self.dataset)
-        self.logger.add_text('summary', net_summary_text)
-        with open(os.path.join(self.log_dir, 'summary.txt'), 'w') as file:
-            file.write(net_summary_text)
-        if self.print_summary:
-            print(net_summary_text)
+        # net_summary_text = net_summary(self.net, self.dataset, device='cuda')
+        # self.logger.add_text('summary', net_summary_text)
+        # with open(os.path.join(self.log_dir, 'summary.txt'), 'w') as file:
+        #     file.write(net_summary_text)
+        # if self.print_summary:
+        #     print(net_summary_text)
 
         try:
             dummy_input = torch.zeros_like(self.dataset.__getitem__(0)[0])
@@ -148,7 +157,7 @@ class Trainer:
             break
 
     def training(self, train_loader):
-        tbar = tqdm(train_loader, ascii=True, desc='train')
+        tbar = tqdm(train_loader, ascii=True, desc='train', file=sys.stdout)
         for batch_idx, (imgs, labels) in enumerate(tbar):
             self.optimizer.zero_grad()
 
@@ -219,12 +228,23 @@ def get_args():
                         help='load config file')
     parser.add_argument('-r', '--resume', type=str, default=None,
                         help='resume checkpoint')
+    parser.add_argument('-l', '--local_rank', default=0, type=int)
     args = parser.parse_args()
     return args
 
 
 if __name__ == '__main__':
     args = get_args()
+
+    if int(os.environ['RANK']) == 0:
+        enable_log = True
+    else:
+        enable_log = False
+        sys.stdout = open(os.devnull, 'w')
+
+    torch.cuda.set_device(args.local_rank)
+    torch.distributed.init_process_group(backend='nccl', init_method='env://')
+    torch.backends.cudnn.benchmark = True
 
     if not args.resume:
         cfg_file = args.config
@@ -252,13 +272,19 @@ if __name__ == '__main__':
     train_transform = get_transform(cfg, 'train')
     valid_transform = get_transform(cfg, 'valid')
 
-    dataset = get_dataset(cfg, dataset_root, train_transform, valid_transform)
+    distributed = True
+    dataset = get_dataset(cfg, dataset_root, distributed, train_transform, valid_transform)
     criterion = get_criterion(cfg, dataset)
+
     net = get_net(cfg, dataset)
+    net = apex.parallel.convert_syncbn_model(net)
+    net = DistributedDataParallel(net.cuda())
+
     optimizer = get_optimizer(cfg, net)
     scheduler = get_scheduler(cfg, optimizer)
 
     eval_func_check(cfg, dataset)
+
 
     # init_weights(net, cfg['training']['init_weight_func'])
 
@@ -280,25 +306,26 @@ if __name__ == '__main__':
         elif choice in no:
             return False
 
+
     if not args.resume:
-        if os.path.exists(log_dir):
-            files = os.listdir(log_dir)
-            if len(files) >= 3:
-                msg = '"{}" has old log file. Do you want to delete? (y/n) '.format(log_dir)
-                if not check(log_dir):
-                    sys.exit(-1)
-        else:
-            os.makedirs(log_dir)
+        if enable_log:
+            if os.path.exists(log_dir):
+                files = os.listdir(log_dir)
+                if len(files) >= 3:
+                    msg = '"{}" has old log file. Do you want to delete? (y/n) '.format(log_dir)
+                    if not check(log_dir):
+                        sys.exit(-1)
+            else:
+                os.makedirs(log_dir)
         start_epoch = 0
-
     else:
-
         net, optimizer, start_epoch = cp.load_params(net, optimizer, root=cp_file)
 
-    file = os.path.join(log_dir, 'cfg.yml')
-    with open(file, 'w', encoding='utf-8') as fp:
-        yaml.dump(cfg, fp, default_flow_style=False, Dumper=yaml.RoundTripDumper)
+    if enable_log:
+        file = os.path.join(log_dir, 'cfg.yml')
+        with open(file, 'w', encoding='utf-8') as fp:
+            yaml.dump(cfg, fp, default_flow_style=False, Dumper=yaml.RoundTripDumper)
 
     torch.cuda.empty_cache()
-    trainer = Trainer(net, dataset, optimizer, scheduler, criterion, start_epoch, log_dir, cfg)
+    trainer = Trainer(net, dataset, optimizer, scheduler, criterion, start_epoch, log_dir, enable_log, cfg)
     trainer.run()
