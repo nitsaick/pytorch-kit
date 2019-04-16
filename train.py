@@ -115,7 +115,7 @@ class Trainer:
             device = 'cuda' + str(self.gpu_ids)
         else:
             device = 'cpu'
-        msg = 'Net: {}\n'.format(self.net.__class__.__name__) + \
+        msg = 'Net: {}\n'.format(self.net.module.__class__.__name__) + \
               'Dataset: {}\n'.format(self.dataset.__class__.__name__) + \
               'Epochs: {}\n'.format(self.epoch_num) + \
               'Learning rate: {}\n'.format(optimizer.param_groups[0]['lr']) + \
@@ -127,7 +127,7 @@ class Trainer:
         self.logger.add_text('detail', msg)
 
     def log_info(self, valid_loader):
-        net_summary_text = net_summary(self.net, self.dataset)
+        net_summary_text = net_summary(self.net, self.dataset, device='cpu')
         self.logger.add_text('summary', net_summary_text)
         with open(os.path.join(self.log_dir, 'summary.txt'), 'w') as file:
             file.write(net_summary_text)

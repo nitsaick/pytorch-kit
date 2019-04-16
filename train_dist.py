@@ -122,7 +122,7 @@ class Trainer:
             device = 'cuda' + str(self.gpu_ids)
         else:
             device = 'cpu'
-        msg = 'Net: {}\n'.format(self.net.__class__.__name__) + \
+        msg = 'Net: {}\n'.format(self.net.module.__class__.__name__) + \
               'Dataset: {}\n'.format(self.dataset.__class__.__name__) + \
               'Epochs: {}\n'.format(self.epoch_num) + \
               'Learning rate: {}\n'.format(optimizer.param_groups[0]['lr']) + \
@@ -272,8 +272,7 @@ if __name__ == '__main__':
     train_transform = get_transform(cfg, 'train')
     valid_transform = get_transform(cfg, 'valid')
 
-    distributed = True
-    dataset = get_dataset(cfg, dataset_root, distributed, train_transform, valid_transform)
+    dataset = get_dataset(cfg, dataset_root, train_transform, valid_transform, distributed=True)
     criterion = get_criterion(cfg, dataset)
 
     net = get_net(cfg, dataset)
