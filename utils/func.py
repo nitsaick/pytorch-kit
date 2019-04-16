@@ -51,7 +51,7 @@ def calc_class_weigth(dataset):
 
 def net_summary(net, dataset, device='cpu'):
     with io.StringIO() as buf, redirect_stdout(buf):
-        summary(net, dataset.__getitem__(0)[0].shape, device)
+        summary(net, dataset.__getitem__(0)[0].shape, device=device)
         net_summary_text = buf.getvalue()
 
         return net_summary_text
