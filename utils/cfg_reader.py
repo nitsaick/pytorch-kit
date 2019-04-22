@@ -209,7 +209,7 @@ def get_scheduler(cfg, optimizer):
 
 
 def eval_func_check(cfg, dataset):
-    if cfg['training'].get(['eval_func']) is None or cfg['training']['eval_func'] is None:
+    if cfg['training'].get('eval_func') is None or cfg['training']['eval_func'] is None:
         if dataset.num_classes <= 2:
             cfg['training']['eval_func'] = 'dc'
         else:
