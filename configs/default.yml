@@ -43,6 +43,9 @@ dataset:
 
     cityscapes: ~
 
+    kits19:
+        valid_rate: 0.2
+
 transform:
     medical_transform:
         train:

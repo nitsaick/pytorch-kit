@@ -3,5 +3,6 @@ voc2012seg: ~/dataset/VOC2012Seg
 xvertseg: ~/dataset/xVertSeg
 cityscapes: ~/dataset/Cityscapes
 sbd: ~/dataset/SBD/benchmark_RELEASE
+kits19: ~/dataset/kits19/data
 
 log_root: ~/runs
