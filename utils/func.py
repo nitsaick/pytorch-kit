@@ -34,24 +34,31 @@ def calc_class_weigth(dataset):
         labels = label[mask].astype(np.uint8)
         count = np.bincount(labels, minlength=num_classes)
         class_count += count
-    class_count = class_count[1:]
+    # class_count = class_count[1:]
     total = np.sum(class_count)
     class_weights = []
     for count in class_count:
         weight = total / count
         class_weights.append(weight)
     class_weights /= np.mean(class_weights)
-    class_weights = [1, *class_weights]
+    # class_weights = [1, *class_weights]
     class_weights = np.array(class_weights)
+
     path = os.path.join(dataset.root, 'class_weights.npy')
     np.save(path, class_weights)
+
+    path = os.path.join(dataset.root, 'class_count.npy')
+    np.save(path, class_count)
 
     return class_weights
 
 
 def net_summary(net, dataset, device='cpu'):
     with io.StringIO() as buf, redirect_stdout(buf):
-        summary(net, dataset.__getitem__(0)[0].shape, device=device)
+        if device == 'cpu':
+            summary(net, dataset.__getitem__(0)[0].shape, device=device)
+        elif device == 'cuda':
+            summary(net.cuda(), dataset.__getitem__(0)[0].shape, device=device)
         net_summary_text = buf.getvalue()
 
         return net_summary_text
