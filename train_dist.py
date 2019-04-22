@@ -236,15 +236,15 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
 
-    if int(os.environ['RANK']) == 0:
+    torch.cuda.set_device(args.local_rank)
+    torch.distributed.init_process_group(backend='nccl', init_method='env://')
+    torch.backends.cudnn.benchmark = True
+
+    if torch.distributed.get_rank() == 0:
         enable_log = True
     else:
         enable_log = False
         sys.stdout = open(os.devnull, 'w')
-
-    torch.cuda.set_device(args.local_rank)
-    torch.distributed.init_process_group(backend='nccl', init_method='env://')
-    torch.backends.cudnn.benchmark = True
 
     if not args.resume:
         cfg_file = args.config
