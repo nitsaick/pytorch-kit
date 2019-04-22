@@ -1,6 +1,7 @@
 import datetime
 import os
 
+import numpy as np
 import torch
 import torch.nn as nn
 from ruamel import yaml
@@ -8,13 +9,13 @@ from ruamel import yaml
 import dataset
 import network
 from dataset.transform import random_flip_transform, medical_transform, real_world_transform
-from utils.switch import *
 from utils.func import calc_class_weigth
-import numpy as np
+from utils.switch import *
 
 __all__ = ['cfg_check', 'gpu_check', 'gpu_check', 'log_name_check',
            'get_transform', 'get_dataset', 'get_criterion', 'get_net',
            'get_optimizer', 'get_scheduler', 'eval_func_check']
+
 
 def cfg_check(cfg):
     def check(cfg, default_cfg):
@@ -106,6 +107,13 @@ def get_dataset(cfg, dataset_root, train_transform, valid_transform, distributed
             dataset_ = dataset.Cityscapes(root=dataset_root, distributed=distributed,
                                           train_transform=train_transform,
                                           valid_transform=valid_transform)
+            break
+
+        if case('kits19'):
+            dataset_ = dataset.kits19(root=dataset_root, valid_rate=0.2,
+                                      train_transform=train_transform,
+                                      valid_transform=valid_transform,
+                                      distributed=distributed)
             break
 
         if case():
