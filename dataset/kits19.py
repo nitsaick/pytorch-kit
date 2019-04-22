@@ -84,7 +84,7 @@ class kits19(data.Dataset):
 
                 vol_label.append(label)
                 vol_output.append(output)
-                if type == 'valid' and not appended and i + img.shape[0] >= vis_idx[case_i]:
+                if type == 'valid' and not appended and i + img.shape[0] > vis_idx[case_i]:
                     idx = vis_idx[case_i] - i
                     vis_img.append(img[idx].unsqueeze(0).cpu().detach())
                     vis_label.append(label[idx].unsqueeze(0).cpu().detach())
