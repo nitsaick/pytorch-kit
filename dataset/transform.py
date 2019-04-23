@@ -2,8 +2,8 @@ from random import random
 
 import cv2
 import numpy as np
+import torch
 import torchvision.transforms.functional as F
-from PIL import Image, ImageOps
 from albumentations import (
     PadIfNeeded,
     HorizontalFlip,
@@ -20,14 +20,15 @@ from albumentations import (
     RandomScale
 )
 
-__all__ = ['to_tensor', 'random_flip_transform', 'random_crop_transform', 'random_scale_crop',
+__all__ = ['to_tensor', 'random_flip_transform', 'random_scale_crop',
            'medical_transform', 'real_world_transform']
 
 
 def to_tensor(data):
+    data = to_numpy(data)
     image, label = data['image'], data['label']
-    image = F.to_tensor(image)
-    label = F.to_tensor(label)
+    image = torch.from_numpy(image)
+    label = torch.from_numpy(label)
     return {'image': image, 'label': label}
 
 
@@ -35,7 +36,6 @@ def to_numpy(data):
     image, label = data['image'], data['label']
     image = np.array(image)
     label = np.array(label)
-    label = label.reshape((*label.shape, 1))
     return {'image': image, 'label': label}
 
 
@@ -73,21 +73,6 @@ def random_flip_transform(data):
     return data
 
 
-def random_crop_transform(img, label, transform_params):
-    width, height = img.size
-    padh = width - height if width > height else 0
-    padw = height - width if height > width else 0
-    img = ImageOps.expand(img, border=(padw // 2, padh // 2, padw // 2, padh // 2), fill=0)
-    label = ImageOps.expand(label, border=(padw // 2, padh // 2, padw // 2, padh // 2), fill=0)
-
-    oh, ow = transform_params
-    img = img.resize((ow, oh), Image.BILINEAR)
-    label = label.resize((ow, oh), Image.NEAREST)
-
-    img, label = random_flip_transform(img, label, transform_params)
-    return img, label
-
-
 class random_scale_crop:
     def __init__(self, output_size, scale_range=0.1, type='train'):
         if isinstance(output_size, (tuple, list)):
@@ -99,10 +84,8 @@ class random_scale_crop:
         self.type = type
 
     def __call__(self, data):
+        data = to_numpy(data)
         img, label = data['image'], data['label']
-
-        img = np.array(img)
-        label = np.array(label)
 
         img_size = img.shape[0] if img.shape[0] < img.shape[1] else img.shape[1]
         crop_size = self.output_size[0] if self.output_size[0] < self.output_size[1] else self.output_size[1]
@@ -132,11 +115,6 @@ class random_scale_crop:
         data = aug(image=img, mask=label)
         img, label = data['image'], data['mask']
 
-        if len(img.shape) == 2:
-            img = img.reshape((*img.shape, 1))
-        if len(label.shape) == 2:
-            label = label.reshape((*label.shape, 1))
-
         data = {'image': img, 'label': label}
         return data
 
@@ -152,13 +130,12 @@ class medical_transform:
         self.type = type
 
     def __call__(self, data):
+        data = to_numpy(data)
+
         aug = random_scale_crop(output_size=self.size, scale_range=self.scale_range, type=self.type)
         data = aug(data)
 
         img, label = data['image'], data['label']
-
-        img = np.array(img)
-        label = np.array(label)
 
         if self.type == 'train':
             aug = Compose([
@@ -173,11 +150,6 @@ class medical_transform:
             ])
             data = aug(image=img, mask=label)
             img, label = data['image'], data['mask']
-
-        if len(img.shape) == 2:
-            img = img.reshape((*img.shape, 1))
-        if len(label.shape) == 2:
-            label = label.reshape((*label.shape, 1))
 
         data = {'image': img, 'label': label}
         return data
@@ -194,13 +166,12 @@ class real_world_transform:
         self.type = type
 
     def __call__(self, data):
+        data = to_numpy(data)
+
         aug = random_scale_crop(output_size=self.size, scale_range=self.scale_range, type=self.type)
         data = aug(data)
 
         img, label = data['image'], data['label']
-
-        img = np.array(img)
-        label = np.array(label)
 
         if self.type == 'train':
             aug = Compose([
@@ -211,11 +182,6 @@ class real_world_transform:
             ])
             data = aug(image=img, mask=label)
             img, label = data['image'], data['mask']
-
-        if len(img.shape) == 2:
-            img = img.reshape((*img.shape, 1))
-        if len(label.shape) == 2:
-            label = label.reshape((*label.shape, 1))
 
         data = {'image': img, 'label': label}
         return data
