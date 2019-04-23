@@ -138,7 +138,11 @@ class Trainer:
             dummy_input = torch.zeros_like(self.dataset.__getitem__(0)[0])
             dummy_input = dummy_input.view((1,) + dummy_input.shape)
             self.logger.add_graph(net, dummy_input)
-        except RuntimeError:
+        except RuntimeError as e:
+            # https://github.com/pytorch/pytorch/issues/10942#issuecomment-481992493
+            # the forward function in the deeplab aspp has F.interpolate, kernel is dynamic,
+            # but ONNX is statically determine the kernel size, so deeplab cannot export to ONNX currently.
+            print(type(e), str(e))
             print('Warning: Cannot export net to ONNX, ignore log graph to tensorboard')
 
         for batch_idx, (imgs, labels) in enumerate(valid_loader):

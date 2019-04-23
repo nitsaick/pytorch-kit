@@ -54,7 +54,7 @@ class AttUNet(nn.Module):
         
         def forward(self, x1, x2):
             x1 = self.up(x1)
-            x2 = self.att(g=x1, x=x2)
+            x2 = self.att(x1, x2)
             x = torch.cat([x2, x1], dim=1)
             x = self.conv(x)
             return x
