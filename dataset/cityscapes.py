@@ -9,7 +9,7 @@ from utils.func import recursive_glob
 
 
 class Cityscapes(data.Dataset):
-    def __init__(self, root, distributed=False, train_transform=None, valid_transform=None):
+    def __init__(self, root, train_transform=None, valid_transform=None):
         self.root = root
         self.imgs, self.labels = self.get_img_list(root)
 
@@ -26,7 +26,7 @@ class Cityscapes(data.Dataset):
         self.ignore_index = 255
         self.class_map = dict(zip(self.valid_classes, range(self.num_classes)))
 
-        self._split(distributed)
+        self._split()
 
         self.img_channels = self.__getitem__(0)[0].shape[0]
 
@@ -63,26 +63,10 @@ class Cityscapes(data.Dataset):
 
         return imgs, labels
 
-    def _split(self, distributed):
+    def _split(self):
         self.train_dataset = data.Subset(self, self.train_indices)
         self.valid_dataset = data.Subset(self, self.valid_indices)
         self.test_dataset = data.Subset(self, self.test_indices)
-
-        if distributed:
-            self.train_sampler = data.distributed.DistributedSampler(self.train_dataset)
-        else:
-            self.train_sampler = data.RandomSampler(self.train_dataset)
-        self.valid_sampler = data.SequentialSampler(self.valid_dataset)
-        self.test_sampler = data.SequentialSampler(self.test_dataset)
-
-    def get_dataloader(self, batch_size=1, num_workers=0, pin_memory=False):
-        train_loader = data.DataLoader(self.train_dataset, batch_size=batch_size, sampler=self.train_sampler,
-                                       num_workers=num_workers, pin_memory=pin_memory)
-        valid_loader = data.DataLoader(self.valid_dataset, batch_size=batch_size, sampler=self.valid_sampler,
-                                       num_workers=num_workers, pin_memory=pin_memory)
-        test_loader = data.DataLoader(self.test_dataset, batch_size=batch_size, sampler=self.test_sampler,
-                                      num_workers=num_workers, pin_memory=pin_memory)
-        return train_loader, valid_loader, test_loader
 
     def get_colormap(self):
         cmap = np.array([
@@ -130,37 +114,7 @@ class Cityscapes(data.Dataset):
                         'bicycle']
         return classes_name
 
-    def vis_transform(self, imgs, labels, preds, to_plt=False):
-        cmap = self.get_colormap()
-        if imgs is not None:
-            if type(imgs).__module__ != np.__name__:
-                imgs = imgs.cpu().detach().numpy()
-            if to_plt is True:
-                imgs = imgs.transpose((0, 2, 3, 1))
-
-        if labels is not None:
-            if type(labels).__module__ != np.__name__:
-                labels = labels.cpu().detach().numpy().astype('int')
-            labels = cmap[labels]
-            labels = labels.transpose((0, 3, 1, 2))
-            if to_plt is True:
-                labels = labels.transpose((0, 2, 3, 1))
-            labels = labels / 255.
-
-        if preds is not None:
-            if type(preds).__module__ != np.__name__:
-                preds = preds.cpu().detach().numpy()
-            if preds.shape[1] == self.num_classes:
-                preds = preds.argmax(axis=1)
-            preds = cmap[preds]
-            preds = preds.transpose((0, 3, 1, 2))
-            if to_plt is True:
-                preds = preds.transpose((0, 2, 3, 1))
-            preds = preds / 255.
-
-        return imgs, labels, preds
-
-    def vis_transform(self, imgs, labels, preds, to_plt=False):
+    def vis_transform(self, imgs=None, labels=None, preds=None, to_plt=False):
         cmap = self.get_colormap()
         if imgs is not None:
             if type(imgs).__module__ != np.__name__:

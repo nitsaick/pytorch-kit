@@ -1,3 +1,4 @@
+import pathlib
 import shutil
 import sys
 from argparse import ArgumentParser
@@ -5,13 +6,14 @@ from argparse import ArgumentParser
 import torch
 from ruamel import yaml
 from tensorboardX import SummaryWriter
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 
 import utils.checkpoint as cp
 from utils.cfg_reader import *
 from utils.func import *
 from utils.metrics import Evaluator
 from utils.vis import imshow
-import pathlib
+
 
 class Trainer:
     def __init__(self, net, dataset, optimizer, scheduler, criterion, start_epoch, log_dir, cfg):
@@ -43,9 +45,7 @@ class Trainer:
             os.makedirs(self.checkpoint_dir)
 
     def run(self):
-        train_loader, valid_loader, _ = self.dataset.get_dataloader(self.batch_size, self.num_workers, pin_memory=True)
-
-        self.log_info(valid_loader)
+        self.log_info()
 
         if self.cuda:
             self.net = torch.nn.DataParallel(self.net, device_ids=self.gpu_ids).cuda()
@@ -56,7 +56,7 @@ class Trainer:
                         state[k] = v.cuda()
 
         print('{:-^40s}'.format(' Start training '))
-        self.show_train_info(train_loader, valid_loader)
+        self.show_train_info()
 
         valid_acc = 0.0
         best_acc = 0.0
@@ -76,7 +76,7 @@ class Trainer:
             torch.set_grad_enabled(True)
 
             try:
-                loss = self.training(train_loader)
+                loss = self.training()
             except KeyboardInterrupt:
                 cp_path = os.path.join(self.checkpoint_dir, 'INTERRUPTED.pth')
                 cp.save(epoch, self.net, self.optimizer, cp_path)
@@ -89,10 +89,10 @@ class Trainer:
                 torch.set_grad_enabled(False)
 
                 # Evaluation phase
-                train_acc = self.evaluation(train_loader, epoch)
+                train_acc = self.evaluation(epoch)
 
                 # Validation phase
-                valid_acc = self.validation(valid_loader, epoch)
+                valid_acc = self.validation(epoch)
 
                 print('Train data {} acc:  {:.5f}'.format(self.eval_func, train_acc))
                 print('Valid data {} acc:  {:.5f}'.format(self.eval_func, valid_acc))
@@ -110,7 +110,15 @@ class Trainer:
                 checkpoint_filename = 'cp_{:03d}.pth'.format(epoch + 1)
                 cp.save(epoch, self.net.module, self.optimizer, os.path.join(self.checkpoint_dir, checkpoint_filename))
 
-    def show_train_info(self, train_loader, valid_loader):
+    def show_train_info(self):
+        sampler = SequentialSampler(self.dataset.train_dataset)
+        train_loader = DataLoader(self.dataset.train_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
+
+        sampler = SequentialSampler(self.dataset.valid_dataset)
+        valid_loader = DataLoader(self.dataset.valid_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
+
         if self.cuda:
             device = 'cuda' + str(self.gpu_ids)
         else:
@@ -126,7 +134,7 @@ class Trainer:
         print(msg)
         self.logger.add_text('detail', msg)
 
-    def log_info(self, valid_loader):
+    def log_info(self):
         net_summary_text = net_summary(self.net, self.dataset, device='cpu')
         self.logger.add_text('summary', net_summary_text)
         with open(os.path.join(self.log_dir, 'summary.txt'), 'w') as file:
@@ -145,13 +153,20 @@ class Trainer:
             print(type(e), str(e))
             print('Warning: Cannot export net to ONNX, ignore log graph to tensorboard')
 
+        sampler = SequentialSampler(self.dataset.valid_dataset)
+        valid_loader = DataLoader(self.dataset.valid_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
         for batch_idx, (imgs, labels) in enumerate(valid_loader):
             imgs, labels, _ = self.dataset.vis_transform(imgs, labels, None)
             self.logger.add_images('image', imgs, 0)
             self.logger.add_images('label', labels, 0)
             break
 
-    def training(self, train_loader):
+    def training(self):
+        sampler = RandomSampler(self.dataset.train_dataset)
+        train_loader = DataLoader(self.dataset.train_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
+
         tbar = tqdm(train_loader, ascii=True, desc='train')
         for batch_idx, (imgs, labels) in enumerate(tbar):
             self.optimizer.zero_grad()
@@ -176,7 +191,11 @@ class Trainer:
 
         return loss.item()
 
-    def evaluation(self, train_loader, epoch):
+    def evaluation(self, epoch):
+        sampler = SequentialSampler(self.dataset.train_dataset)
+        train_loader = DataLoader(self.dataset.train_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
+
         evaluator = Evaluator(self.dataset.num_classes)
         tbar = tqdm(train_loader, desc='eval ', ascii=True)
         for batch_idx, (imgs, labels) in enumerate(tbar):
@@ -193,7 +212,11 @@ class Trainer:
         evaluator.log_acc(self.logger, epoch, 'train/')
         return train_acc
 
-    def validation(self, valid_loader, epoch):
+    def validation(self, epoch):
+        sampler = SequentialSampler(self.dataset.valid_dataset)
+        valid_loader = DataLoader(self.dataset.valid_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
+
         evaluator = Evaluator(self.dataset.num_classes)
         tbar = tqdm(valid_loader, desc='valid', ascii=True)
         for batch_idx, (imgs, labels) in enumerate(tbar):
@@ -264,6 +287,7 @@ if __name__ == '__main__':
 
     eval_func_check(cfg, dataset)
 
+
     # init_weights(net, cfg['training']['init_weight_func'])
 
     def check(path):
@@ -283,6 +307,7 @@ if __name__ == '__main__':
             return True
         elif choice in no:
             return False
+
 
     if not args.resume:
         if os.path.exists(log_dir):

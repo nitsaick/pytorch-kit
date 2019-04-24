@@ -98,13 +98,13 @@ def get_dataset(cfg, dataset_root, train_transform, valid_transform, distributed
             break
 
         if case('voc2012seg'):
-            dataset_ = dataset.VOC2012Seg(root=dataset_root, distributed=distributed,
+            dataset_ = dataset.VOC2012Seg(root=dataset_root,
                                           train_transform=train_transform,
                                           valid_transform=valid_transform)
             break
 
         if case('cityscapes'):
-            dataset_ = dataset.Cityscapes(root=dataset_root, distributed=distributed,
+            dataset_ = dataset.Cityscapes(root=dataset_root,
                                           train_transform=train_transform,
                                           valid_transform=valid_transform)
             break

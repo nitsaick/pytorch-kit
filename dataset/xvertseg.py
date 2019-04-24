@@ -31,19 +31,7 @@ class xVertSeg(data.Dataset):
         self.train_indices, self.valid_indices = self.indices[split:], self.indices[:split]
         self.train_dataset = data.Subset(self, self.train_indices)
         self.valid_dataset = data.Subset(self, self.valid_indices)
-
-        self.train_sampler = data.RandomSampler(self.train_dataset)
-        self.valid_sampler = data.SequentialSampler(self.valid_dataset)
-        self.test_sampler = data.SequentialSampler(self)
-
-    def get_dataloader(self, batch_size=1, num_workers=0, pin_memory=False):
-        train_loader = data.DataLoader(self.train_dataset, batch_size=batch_size, sampler=self.train_sampler,
-                                       num_workers=num_workers, pin_memory=pin_memory)
-        valid_loader = data.DataLoader(self.valid_dataset, batch_size=batch_size, sampler=self.valid_sampler,
-                                       num_workers=num_workers, pin_memory=pin_memory)
-        test_loader = data.DataLoader(self, batch_size=batch_size, sampler=self.test_sampler,
-                                      num_workers=num_workers, pin_memory=pin_memory)
-        return train_loader, valid_loader, test_loader
+        self.test_dataset = self
 
     def get_img_list(self, root):
         dirs = [dir_ for dir_ in sorted(os.listdir(root)) if os.path.isdir(os.path.join(root, dir_))]
@@ -75,7 +63,7 @@ class xVertSeg(data.Dataset):
         return classes_name
 
     def get_colormap(self):
-        cmap = [[0, ], [255, ]]
+        cmap = [[0, 0, 0], [255, 255, 255]]
         cmap = np.array(cmap, dtype=np.int)
         return cmap
 
