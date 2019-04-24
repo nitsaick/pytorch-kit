@@ -72,7 +72,7 @@ class Evaluator:
         self.num_dc = np.zeros(self.num_classes)
     
     def eval(self, func):
-        for case in switch(func):
+        for case in switch(func.lower()):
             if case('dc'):
                 acc = (self.dc_acc / self.num_dc)[1:].sum() / (self.num_classes - 1)
                 break
@@ -82,10 +82,10 @@ class Evaluator:
             if case('pixel_accuracy_class'):
                 acc = self.pixel_accuracy_class()
                 break
-            if case('mIoU'):
+            if case('miou'):
                 acc = self.mean_intersection_over_union()
                 break
-            if case('fwIoU'):
+            if case('fwiou'):
                 acc = self.frequency_weighted_intersection_over_union()
                 break
             if case():
