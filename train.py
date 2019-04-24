@@ -7,6 +7,7 @@ import torch
 from ruamel import yaml
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torchvision.utils import make_grid
 
 import utils.checkpoint as cp
 from utils.cfg_reader import *
@@ -157,9 +158,11 @@ class Trainer:
         valid_loader = DataLoader(self.dataset.valid_dataset, batch_size=self.batch_size, sampler=sampler,
                                   num_workers=self.num_workers, pin_memory=True)
         for batch_idx, (imgs, labels) in enumerate(valid_loader):
-            imgs, labels, _ = self.dataset.vis_transform(imgs, labels, None)
-            self.logger.add_images('image', imgs, 0)
-            self.logger.add_images('label', labels, 0)
+            imgs = make_grid(imgs)
+            labels = make_grid(labels.unsqueeze(dim=1))
+            _, labels, _ = self.dataset.vis_transform(labels=labels)
+            self.logger.add_images('image', imgs, 0, dataformats='CHW')
+            self.logger.add_images('label', labels, 0, dataformats='NCHW')
             break
 
     def training(self):
@@ -223,9 +226,9 @@ class Trainer:
             if self.cuda:
                 imgs = imgs.cuda()
 
-            outputs = self.net(imgs)
+            outputs = self.net(imgs).argmax(dim=1)
 
-            np_outputs = outputs.cpu().detach().numpy().argmax(axis=1)
+            np_outputs = outputs.cpu().detach().numpy()
             np_labels = labels.cpu().detach().numpy()
             evaluator.add_batch(np_outputs, np_labels)
 
@@ -233,7 +236,7 @@ class Trainer:
                 vis_imgs, vis_labels, vis_outputs = self.dataset.vis_transform(imgs, labels, outputs)
                 imshow(title='Valid', imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), shape=(1, 3),
                        subtitle=('image', 'label', 'predict'))
-                self.logger.add_images('output', vis_outputs, epoch)
+                self.logger.add_images('output', vis_outputs, epoch, dataformats='NCHW')
 
         valid_acc = evaluator.eval(self.eval_func)
         evaluator.log_acc(self.logger, epoch, 'valid/')
