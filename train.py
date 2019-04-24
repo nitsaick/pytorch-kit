@@ -90,10 +90,10 @@ class Trainer:
                 torch.set_grad_enabled(False)
 
                 # Evaluation phase
-                train_acc = self.evaluation(epoch)
+                train_acc = self.evaluation(epoch, 'train')
 
                 # Validation phase
-                valid_acc = self.validation(epoch)
+                valid_acc = self.evaluation(epoch, 'valid')
 
                 print('Train data {} acc:  {:.5f}'.format(self.eval_func, train_acc))
                 print('Valid data {} acc:  {:.5f}'.format(self.eval_func, valid_acc))
@@ -110,6 +110,9 @@ class Trainer:
             if (epoch + 1) % self.checkpoint_epoch_interval == 0:
                 checkpoint_filename = 'cp_{:03d}.pth'.format(epoch + 1)
                 cp.save(epoch, self.net.module, self.optimizer, os.path.join(self.checkpoint_dir, checkpoint_filename))
+
+            print(f'Best epoch: {best_epoch}')
+            print(f'Best acc: {best_acc:.5f}')
 
     def show_train_info(self):
         sampler = SequentialSampler(self.dataset.train_dataset)
@@ -194,34 +197,21 @@ class Trainer:
 
         return loss.item()
 
-    def evaluation(self, epoch):
-        sampler = SequentialSampler(self.dataset.train_dataset)
-        train_loader = DataLoader(self.dataset.train_dataset, batch_size=self.batch_size, sampler=sampler,
-                                  num_workers=self.num_workers, pin_memory=True)
+    def evaluation(self, epoch, type):
+        type = type.lower()
+        if type == 'train':
+            subset = self.dataset.train_dataset
+        elif type == 'valid':
+            subset = self.dataset.valid_dataset
+        elif type == 'test':
+            subset = self.dataset.test_dataset
+
+        sampler = SequentialSampler(subset)
+        data_loader = DataLoader(subset, batch_size=self.batch_size, sampler=sampler,
+                                 num_workers=self.num_workers, pin_memory=True)
 
         evaluator = Evaluator(self.dataset.num_classes)
-        tbar = tqdm(train_loader, desc='eval ', ascii=True, dynamic_ncols=True)
-        for batch_idx, (imgs, labels) in enumerate(tbar):
-            if self.cuda:
-                imgs = imgs.cuda()
-
-            outputs = self.net(imgs)
-
-            outputs = outputs.cpu().detach().numpy().argmax(axis=1)
-            labels = labels.cpu().detach().numpy()
-            evaluator.add_batch(outputs, labels)
-
-        train_acc = evaluator.eval(self.eval_func)
-        evaluator.log_acc(self.logger, epoch, 'train/')
-        return train_acc
-
-    def validation(self, epoch):
-        sampler = SequentialSampler(self.dataset.valid_dataset)
-        valid_loader = DataLoader(self.dataset.valid_dataset, batch_size=self.batch_size, sampler=sampler,
-                                  num_workers=self.num_workers, pin_memory=True)
-
-        evaluator = Evaluator(self.dataset.num_classes)
-        tbar = tqdm(valid_loader, desc='valid', ascii=True, dynamic_ncols=True)
+        tbar = tqdm(data_loader, desc=f'eval/{type:5}', ascii=True, dynamic_ncols=True)
         for batch_idx, (imgs, labels) in enumerate(tbar):
             if self.cuda:
                 imgs = imgs.cuda()
@@ -232,15 +222,15 @@ class Trainer:
             np_labels = labels.cpu().detach().numpy()
             evaluator.add_batch(np_outputs, np_labels)
 
-            if self.visualize_iter_interval > 0 and batch_idx % self.visualize_iter_interval == 0:
+            if type == 'valid' and self.visualize_iter_interval > 0 and batch_idx % self.visualize_iter_interval == 0:
                 vis_imgs, vis_labels, vis_outputs = self.dataset.vis_transform(imgs, labels, outputs)
                 imshow(title='Valid', imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), shape=(1, 3),
                        subtitle=('image', 'label', 'predict'))
                 self.logger.add_images('output', vis_outputs, epoch, dataformats='NCHW')
 
-        valid_acc = evaluator.eval(self.eval_func)
-        evaluator.log_acc(self.logger, epoch, 'valid/')
-        return valid_acc
+        acc = evaluator.eval(self.eval_func)
+        evaluator.log_acc(self.logger, epoch, f'{type}/')
+        return acc
 
 
 def get_args():
