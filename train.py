@@ -170,7 +170,7 @@ class Trainer:
         train_loader = DataLoader(self.dataset.train_dataset, batch_size=self.batch_size, sampler=sampler,
                                   num_workers=self.num_workers, pin_memory=True)
 
-        tbar = tqdm(train_loader, ascii=True, desc='train')
+        tbar = tqdm(train_loader, ascii=True, desc='train', dynamic_ncols=True)
         for batch_idx, (imgs, labels) in enumerate(tbar):
             self.optimizer.zero_grad()
 
@@ -200,7 +200,7 @@ class Trainer:
                                   num_workers=self.num_workers, pin_memory=True)
 
         evaluator = Evaluator(self.dataset.num_classes)
-        tbar = tqdm(train_loader, desc='eval ', ascii=True)
+        tbar = tqdm(train_loader, desc='eval ', ascii=True, dynamic_ncols=True)
         for batch_idx, (imgs, labels) in enumerate(tbar):
             if self.cuda:
                 imgs = imgs.cuda()
@@ -221,7 +221,7 @@ class Trainer:
                                   num_workers=self.num_workers, pin_memory=True)
 
         evaluator = Evaluator(self.dataset.num_classes)
-        tbar = tqdm(valid_loader, desc='valid', ascii=True)
+        tbar = tqdm(valid_loader, desc='valid', ascii=True, dynamic_ncols=True)
         for batch_idx, (imgs, labels) in enumerate(tbar):
             if self.cuda:
                 imgs = imgs.cuda()
