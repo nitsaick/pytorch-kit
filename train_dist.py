@@ -243,7 +243,7 @@ class Trainer:
             np_labels = labels.cpu().detach().numpy()
             evaluator.add_batch(np_outputs, np_labels)
 
-            if batch_idx == 0:
+            if self.visualize_iter_interval > 0 and batch_idx % self.visualize_iter_interval == 0:
                 vis_imgs, vis_labels, vis_outputs = self.dataset.vis_transform(imgs, labels, outputs)
                 imshow(title='Valid', imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), shape=(1, 3),
                        subtitle=('image', 'label', 'predict'))
