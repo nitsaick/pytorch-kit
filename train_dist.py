@@ -8,6 +8,9 @@ import torch
 from apex.parallel import DistributedDataParallel
 from ruamel import yaml
 from tensorboardX import SummaryWriter
+from torch.utils.data import DataLoader, SequentialSampler
+from torch.utils.data.distributed import DistributedSampler
+from torchvision.utils import make_grid
 
 import utils.checkpoint as cp
 from utils.cfg_reader import *
@@ -47,10 +50,8 @@ class Trainer:
                 os.makedirs(self.checkpoint_dir)
 
     def run(self):
-        train_loader, valid_loader, _ = self.dataset.get_dataloader(self.batch_size, self.num_workers, pin_memory=True)
-
         if self.enable_log:
-            self.log_info(valid_loader)
+            self.log_info()
 
         if self.cuda:
             self.criterion = self.criterion.cuda()
@@ -60,7 +61,7 @@ class Trainer:
                         state[k] = v.cuda()
 
         print('{:-^40s}'.format(' Start training '))
-        self.show_train_info(train_loader, valid_loader)
+        self.show_train_info()
 
         valid_acc = 0.0
         best_acc = 0.0
@@ -81,25 +82,25 @@ class Trainer:
             torch.set_grad_enabled(True)
 
             try:
-                self.dataset.train_sampler.set_epoch(epoch)
-                loss = self.training(train_loader)
+                loss = self.training(epoch)
             except KeyboardInterrupt:
                 if self.enable_log:
                     cp_path = os.path.join(self.checkpoint_dir, 'INTERRUPTED.pth')
                     cp.save(epoch, self.net, self.optimizer, cp_path)
                 return
 
-            if enable_log: self.logger.add_scalar('loss', loss, epoch)
+            if self.enable_log:
+                self.logger.add_scalar('loss', loss, epoch)
 
-            if enable_log and (epoch + 1) % self.eval_epoch_interval == 0:
+            if self.enable_log and (epoch + 1) % self.eval_epoch_interval == 0:
                 self.net.eval()
                 torch.set_grad_enabled(False)
 
                 # Evaluation phase
-                train_acc = self.evaluation(train_loader, epoch)
+                train_acc = self.evaluation(epoch)
 
                 # Validation phase
-                valid_acc = self.validation(valid_loader, epoch)
+                valid_acc = self.validation(epoch)
 
                 print('Train data {} acc:  {:.5f}'.format(self.eval_func, train_acc))
                 print('Valid data {} acc:  {:.5f}'.format(self.eval_func, valid_acc))
@@ -115,9 +116,18 @@ class Trainer:
 
                 if (epoch + 1) % self.checkpoint_epoch_interval == 0:
                     checkpoint_filename = 'cp_{:03d}.pth'.format(epoch + 1)
-                    cp.save(epoch, self.net.module, self.optimizer, os.path.join(self.checkpoint_dir, checkpoint_filename))
+                    cp.save(epoch, self.net.module, self.optimizer,
+                            os.path.join(self.checkpoint_dir, checkpoint_filename))
 
-    def show_train_info(self, train_loader, valid_loader):
+    def show_train_info(self):
+        sampler = SequentialSampler(self.dataset.train_dataset)
+        train_loader = DataLoader(self.dataset.train_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
+
+        sampler = SequentialSampler(self.dataset.valid_dataset)
+        valid_loader = DataLoader(self.dataset.valid_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
+
         if self.cuda:
             device = 'cuda' + str(self.gpu_ids)
         else:
@@ -132,31 +142,45 @@ class Trainer:
               'Device: {}\n'.format(device)
         print(msg)
 
-        if enable_log:
+        if self.enable_log:
             self.logger.add_text('detail', msg)
 
-    def log_info(self, valid_loader):
-        # net_summary_text = net_summary(self.net, self.dataset, device='cuda')
-        # self.logger.add_text('summary', net_summary_text)
-        # with open(os.path.join(self.log_dir, 'summary.txt'), 'w') as file:
-        #     file.write(net_summary_text)
-        # if self.print_summary:
-        #     print(net_summary_text)
+    def log_info(self):
+        net_summary_text = net_summary(self.net.module, self.dataset, device='cuda')
+        self.logger.add_text('summary', net_summary_text)
+        with open(os.path.join(self.log_dir, 'summary.txt'), 'w') as file:
+            file.write(net_summary_text)
+        if self.print_summary:
+            print(net_summary_text)
 
         try:
             dummy_input = torch.zeros_like(self.dataset.__getitem__(0)[0])
             dummy_input = dummy_input.view((1,) + dummy_input.shape)
-            self.logger.add_graph(net, dummy_input)
-        except RuntimeError:
+            self.logger.add_graph(net.module, dummy_input)
+        except RuntimeError as e:
+            # https://github.com/pytorch/pytorch/issues/10942#issuecomment-481992493
+            # the forward function in the deeplab aspp has F.interpolate, kernel is dynamic,
+            # but ONNX is statically determine the kernel size, so deeplab cannot export to ONNX currently.
+            print(type(e), str(e))
             print('Warning: Cannot export net to ONNX, ignore log graph to tensorboard')
 
+        sampler = SequentialSampler(self.dataset.valid_dataset)
+        valid_loader = DataLoader(self.dataset.valid_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
         for batch_idx, (imgs, labels) in enumerate(valid_loader):
-            imgs, labels, _ = self.dataset.vis_transform(imgs, labels, None)
-            self.logger.add_images('image', imgs, 0)
-            self.logger.add_images('label', labels, 0)
+            imgs = make_grid(imgs)
+            labels = make_grid(labels.unsqueeze(dim=1))
+            _, labels, _ = self.dataset.vis_transform(labels=labels)
+            self.logger.add_images('image', imgs, 0, dataformats='CHW')
+            self.logger.add_images('label', labels, 0, dataformats='NCHW')
             break
 
-    def training(self, train_loader):
+    def training(self, epoch):
+        sampler = DistributedSampler(self.dataset.train_dataset)
+        sampler.set_epoch(epoch)
+        train_loader = DataLoader(self.dataset.train_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
+
         tbar = tqdm(train_loader, ascii=True, desc='train', file=sys.stdout)
         for batch_idx, (imgs, labels) in enumerate(tbar):
             self.optimizer.zero_grad()
@@ -181,7 +205,11 @@ class Trainer:
 
         return loss.item()
 
-    def evaluation(self, train_loader, epoch):
+    def evaluation(self, epoch):
+        sampler = SequentialSampler(self.dataset.train_dataset)
+        train_loader = DataLoader(self.dataset.train_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
+
         evaluator = Evaluator(self.dataset.num_classes)
         tbar = tqdm(train_loader, desc='eval ', ascii=True)
         for batch_idx, (imgs, labels) in enumerate(tbar):
@@ -198,7 +226,11 @@ class Trainer:
         evaluator.log_acc(self.logger, epoch, 'train/')
         return train_acc
 
-    def validation(self, valid_loader, epoch):
+    def validation(self, epoch):
+        sampler = SequentialSampler(self.dataset.valid_dataset)
+        valid_loader = DataLoader(self.dataset.valid_dataset, batch_size=self.batch_size, sampler=sampler,
+                                  num_workers=self.num_workers, pin_memory=True)
+
         evaluator = Evaluator(self.dataset.num_classes)
         tbar = tqdm(valid_loader, desc='valid', ascii=True)
         for batch_idx, (imgs, labels) in enumerate(tbar):
@@ -215,7 +247,7 @@ class Trainer:
                 vis_imgs, vis_labels, vis_outputs = self.dataset.vis_transform(imgs, labels, outputs)
                 imshow(title='Valid', imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), shape=(1, 3),
                        subtitle=('image', 'label', 'predict'))
-                self.logger.add_images('output', vis_outputs, epoch)
+                self.logger.add_images('output', vis_outputs, epoch, dataformats='NCHW')
 
         valid_acc = evaluator.eval(self.eval_func)
         evaluator.log_acc(self.logger, epoch, 'valid/')
@@ -223,7 +255,7 @@ class Trainer:
 
 
 def get_args():
-    parser = ArgumentParser(description="PyTorch Semantic Segmentation Training")
+    parser = ArgumentParser(description='PyTorch Semantic Segmentation Training')
     parser.add_argument('-c', '--config', type=str, default='./configs/unet_spineseg.yml',
                         help='load config file')
     parser.add_argument('-r', '--resume', type=str, default=None,
