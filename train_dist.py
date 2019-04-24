@@ -131,10 +131,6 @@ class Trainer:
         valid_loader = DataLoader(self.dataset.valid_dataset, batch_size=self.batch_size, sampler=sampler,
                                   num_workers=self.num_workers, pin_memory=True)
 
-        if self.cuda:
-            device = 'cuda' + str(self.gpu_ids)
-        else:
-            device = 'cpu'
         msg = 'Net: {}\n'.format(self.net.module.__class__.__name__) + \
               'Dataset: {}\n'.format(self.dataset.__class__.__name__) + \
               'Epochs: {}\n'.format(self.epoch_num) + \
@@ -142,7 +138,7 @@ class Trainer:
               'Batch size: {}\n'.format(self.batch_size) + \
               'Training size: {}\n'.format(len(train_loader.sampler)) + \
               'Validation size: {}\n'.format(len(valid_loader.sampler)) + \
-              'Device: {}\n'.format(device)
+              'Distributed size: {}\n'.format(torch.distributed.get_world_size())
         print(msg)
 
         if self.enable_log:
