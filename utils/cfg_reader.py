@@ -81,39 +81,43 @@ def get_transform(cfg, type):
     return transform
 
 
-def get_dataset(cfg, dataset_root, train_transform, valid_transform, distributed=False):
+def get_dataset(cfg, dataset_root, train_transform, valid_transform):
     assert os.path.exists(dataset_root), '{} does not exist'.format(dataset_root)
-
+    dataset_params = {k: v for k, v in cfg['dataset'].items() if k not in ['name']}
     for case in switch(cfg['dataset']['name'].lower()):
         if case('spineseg'):
-            dataset_ = dataset.SpineSeg(root=dataset_root, valid_rate=0.2,
+            dataset_ = dataset.SpineSeg(root=dataset_root,
                                         train_transform=train_transform,
-                                        valid_transform=valid_transform)
+                                        valid_transform=valid_transform,
+                                        **dataset_params)
             break
 
         if case('xvertseg'):
-            dataset_ = dataset.xVertSeg(root=dataset_root, valid_rate=0.25,
+            dataset_ = dataset.xVertSeg(root=dataset_root,
                                         train_transform=train_transform,
-                                        valid_transform=valid_transform)
+                                        valid_transform=valid_transform,
+                                        **dataset_params)
             break
 
         if case('voc2012seg'):
             dataset_ = dataset.VOC2012Seg(root=dataset_root,
                                           train_transform=train_transform,
-                                          valid_transform=valid_transform)
+                                          valid_transform=valid_transform,
+                                          **dataset_params)
             break
 
         if case('cityscapes'):
             dataset_ = dataset.Cityscapes(root=dataset_root,
                                           train_transform=train_transform,
-                                          valid_transform=valid_transform)
+                                          valid_transform=valid_transform,
+                                          **dataset_params)
             break
 
         if case('kits19'):
-            dataset_ = dataset.kits19(root=dataset_root, valid_rate=0.2,
+            dataset_ = dataset.kits19(root=dataset_root,
                                       train_transform=train_transform,
                                       valid_transform=valid_transform,
-                                      distributed=distributed)
+                                      **dataset_params)
             break
 
         if case():

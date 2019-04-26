@@ -5,18 +5,21 @@ import nibabel as nib
 import numpy as np
 import torch
 from torch.utils import data
-from tqdm import trange
-
-from utils.metrics import Evaluator
 
 
 class kits19(data.Dataset):
-    def __init__(self, root, valid_rate=0.2, train_transform=None, valid_transform=None, distributed=False,
-                 conversion=False):
+    def __init__(self, root, valid_rate=0.2, train_transform=None, valid_transform=None,
+                 conversion=False, specified_classes=None):
         self.root = Path(root)
         if conversion:
             self.conversion_nii2npy(self.root)
         self.imgs, self.labels = self.get_img_list(self.root, valid_rate)
+
+        if specified_classes is None:
+            self.specified_classes = [0, 1, 2]
+        else:
+            assert len(self.get_classes_name(spec=False)) == len(specified_classes)
+            self.specified_classes = specified_classes
 
         self.dataset_size = len(self.imgs)
         self.classes_name = self.get_classes_name()
@@ -26,89 +29,21 @@ class kits19(data.Dataset):
         self.train_transform = train_transform
         self.valid_transform = valid_transform
 
-        self._split(distributed)
+        self._split()
 
         self.img_channels = self.__getitem__(0)[0].shape[0]
+        self.vis_idx = [300, 264, 179, 188, 42, 333, 48, 40, 147, 45,
+                        17, 19, 24, 40, 119, 41, 60, 37, 68, 42,
+                        29, 25, 253, 43, 38, 63, 176, 366, 27, 76,
+                        13, 41, 57, 172, 45, 40, 55, 32, 21, 37,
+                        67, 20, 164, 39, 37, 44, 70, 78, 30, 350,
+                        41, 31, 166, 135, 32, 27, 42, 58, 29, 192,
+                        18, 14, 34, 194, 27, 67, 190, 164, 274, 23]
 
-    def _split(self, distributed):
+    def _split(self):
         self.train_dataset = data.Subset(self, self.train_indices)
         self.valid_dataset = data.Subset(self, self.valid_indices)
-
-        if distributed:
-            self.train_sampler = data.distributed.DistributedSampler(self.train_dataset)
-        else:
-            self.train_sampler = data.RandomSampler(self.train_dataset)
-        self.valid_sampler = data.SequentialSampler(self.valid_dataset)
-        self.test_sampler = data.SequentialSampler(self)
-
-    def get_dataloader(self, batch_size=1, num_workers=0, pin_memory=False):
-        train_loader = data.DataLoader(self.train_dataset, batch_size=batch_size, sampler=self.train_sampler,
-                                       num_workers=num_workers, pin_memory=pin_memory)
-        valid_loader = data.DataLoader(self.valid_dataset, batch_size=batch_size, sampler=self.valid_sampler,
-                                       num_workers=num_workers, pin_memory=pin_memory)
-        test_loader = data.DataLoader(self, batch_size=batch_size, sampler=self.test_sampler,
-                                      num_workers=num_workers, pin_memory=pin_memory)
-        return train_loader, valid_loader, test_loader
-
-    def eval(self, net, cuda, eval_func, logger, epoch, type, batch_size, num_workers, pin_memory):
-        if type == 'eval':
-            case = self.case_indices[self.split_case:]
-        elif type == 'valid':
-            case = self.case_indices[:self.split_case]
-
-        vis_img = []
-        vis_label = []
-        vis_output = []
-        vis_idx = [300, 264, 179, 188, 42, 333, 48, 40, 147, 45, 17, 19, 24, 40, 119, 41, 60, 37, 68, 42, 29, 25, 253,
-                   43, 38, 63, 176, 366, 27, 76, 13, 41, 57, 172, 45, 40, 55, 32, 21, 37, 67]
-        evaluator = Evaluator(self.num_classes)
-        for case_i in trange(len(case) - 1, desc=f'{type:5}', ascii=True):
-            vol_label = []
-            vol_output = []
-
-            img_idx = list(range(case[case_i], case[case_i + 1]))
-            case_subset = data.Subset(self, img_idx)
-            sampler = data.SequentialSampler(case_subset)
-            data_loader = data.DataLoader(case_subset, batch_size=batch_size, sampler=sampler,
-                                          num_workers=num_workers, pin_memory=pin_memory)
-
-            # total_num = case[case_i + 1] - case[case_i]
-
-            i = 0
-            appended = False
-            for batch_idx, (img, label) in enumerate(data_loader):
-                if cuda:
-                    img = img.cuda()
-
-                output = net(img)
-
-                vol_label.append(label)
-                vol_output.append(output)
-                if type == 'valid' and not appended and i + img.shape[0] > vis_idx[case_i]:
-                    idx = vis_idx[case_i] - i
-                    vis_img.append(img[idx].unsqueeze(0).cpu().detach())
-                    vis_label.append(label[idx].unsqueeze(0).cpu().detach())
-                    vis_output.append(output[idx].unsqueeze(0).cpu().detach())
-                    appended = True
-
-                i += img.shape[0]
-
-            vol_output = torch.cat(vol_output, dim=0).argmax(dim=1).cpu().detach().numpy()
-            vol_label = torch.cat(vol_label, dim=0).cpu().detach().numpy()
-            evaluator.add(vol_output, vol_label)
-
-        if type == 'valid':
-            vis_img = torch.cat(vis_img, dim=0).numpy()
-            vis_label = torch.cat(vis_label, dim=0).numpy()
-            vis_output = torch.cat(vis_output, dim=0).argmax(dim=1).numpy()
-            vis_img, vis_label, vis_output = self.vis_transform(vis_img, vis_label, vis_output)
-            logger.add_images('image', vis_img, epoch)
-            logger.add_images('label', vis_label, epoch)
-            logger.add_images('output', vis_output, epoch)
-
-        acc = evaluator.eval(eval_func)
-        evaluator.log_acc(logger, epoch, type + '/')
-        return acc
+        self.test_dataset = self
 
     def normalize(self, volume):
         DEFAULT_HU_MAX = 512
@@ -148,13 +83,15 @@ class kits19(data.Dataset):
 
         self.case_indices = [0, ]
         cases = sorted([d for d in root.iterdir() if d.is_dir()])
-        self.split_case = int(len(cases) * valid_rate)
-        for case in cases:
-            if case.stem == 'case_00160': continue
-
+        cases.pop(160)
+        self.split_case = int(np.round(len(cases) * valid_rate))
+        for i in range(len(cases)):
+            case = cases[i]
             imaging_dir = case / 'imaging'
-            imgs += sorted(list(imaging_dir.glob('*.npy')))
             segmentation_dir = case / 'segmentation'
+            assert imaging_dir.exists() and segmentation_dir.exists()
+
+            imgs += sorted(list(imaging_dir.glob('*.npy')))
             labels += sorted(list(segmentation_dir.glob('*.npy')))
 
             assert len(imgs) == len(labels)
@@ -175,20 +112,58 @@ class kits19(data.Dataset):
         image = np.stack((image, image, image), 0)
         label = label.astype(np.int64)
 
+        idx = list(range(len(self.get_classes_name(spec=False))))
+        masks = [np.where(label == i) for i in idx]
+
+        spec_class_idx = []
+        for i in self.specified_classes:
+            if i not in spec_class_idx:
+                spec_class_idx.append(i)
+
+        for mask, spec_class in zip(masks, self.specified_classes):
+            label[mask] = spec_class_idx.index(spec_class)
+
+        spec_class_idx = []
+        for i in self.specified_classes:
+            if i not in spec_class_idx:
+                spec_class_idx.append(i)
+
         image = torch.from_numpy(image)
         label = torch.from_numpy(label)
         return {'image': image, 'label': label}
 
-    def get_colormap(self):
+    def get_colormap(self, spec=True):
         cmap = [[0, 0, 0], [255, 0, 0], [0, 0, 255]]
         cmap = np.array(cmap, dtype=np.int)
-        return cmap
 
-    def get_classes_name(self):
-        classes_name = ['background', 'kidney', 'tumor']
-        return classes_name
+        if not spec:
+            return cmap
+        else:
+            spec_cmap = []
+            for i in cmap[self.specified_classes]:
+                if len(spec_cmap) == 0:
+                    spec_cmap.append(i)
+                else:
+                    duplicate = False
+                    for j in spec_cmap:
+                        duplicate = duplicate or (i == j).all()
+                    if not duplicate:
+                        spec_cmap.append(i)
+            return np.array(spec_cmap)
 
-    def vis_transform(self, imgs, labels, preds, to_plt=False):
+    def get_classes_name(self, spec=True):
+        classes_name = np.array(['background', 'kidney', 'tumor'])
+
+        if not spec:
+            return classes_name
+        else:
+            spec_classes_name = []
+            for i in classes_name[self.specified_classes]:
+                if i not in spec_classes_name:
+                    spec_classes_name.append(i)
+            return spec_classes_name
+
+    def vis_transform(self, imgs=None, labels=None, preds=None, to_plt=False):
         cmap = self.get_colormap()
         if imgs is not None:
             if type(imgs).__module__ != np.__name__:
@@ -218,17 +193,17 @@ class kits19(data.Dataset):
 
         return imgs, labels, preds
 
-    def __getitem__(self, index):
-        img_path = self.imgs[index]
+    def __getitem__(self, idx):
+        img_path = self.imgs[idx]
         img = np.load(str(img_path))
 
-        label_path = self.labels[index]
+        label_path = self.labels[idx]
         label = np.load(str(label_path))
 
         data = {'image': img, 'label': label}
-        if index in self.train_indices and self.train_transform is not None:
+        if idx in self.train_indices and self.train_transform is not None:
             data = self.train_transform(data)
-        elif index in self.valid_indices and self.valid_transform is not None:
+        elif idx in self.valid_indices and self.valid_transform is not None:
             data = self.valid_transform(data)
 
         data = self.default_transform(data)
@@ -236,7 +211,7 @@ class kits19(data.Dataset):
         img = data['image']
         label = data['label']
 
-        return img, label
+        return img, label, idx
 
     def __len__(self):
         return self.dataset_size
@@ -245,13 +220,12 @@ class kits19(data.Dataset):
 if __name__ == '__main__':
     from utils.vis import imshow
 
-    root = os.path.expanduser('D:/Qsync/kits19/data')
+    root = os.path.expanduser('~/dataset/kits19/data')
     dataset_ = kits19(root=root, valid_rate=0.2,
                       train_transform=None,
-                      valid_transform=None)
+                      valid_transform=None, specified_classes=[0, 0, 2])
 
-    train_loader, valid_loader, _ = dataset_.get_dataloader(batch_size=1)
-    dataset_.eval()
-    for batch_idx, (img, label) in enumerate(train_loader):
+    train_loader, valid_loader, _ = dataset_.get_dataloader(batch_size=10)
+    for batch_idx, (img, label, idx) in enumerate(train_loader):
         imgs, labels, _ = dataset_.vis_transform(imgs=img, labels=label, preds=None)
         imshow(title='kits19', imgs=(imgs[0], labels[0]))

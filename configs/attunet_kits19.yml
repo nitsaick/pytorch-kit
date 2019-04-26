@@ -3,6 +3,11 @@ net:
 
 dataset:
     name: kits19
+    valid_rate: 0.3
+    specified_classes:
+        - 0
+        - 1
+        - 1
 
 transform:
     train:
@@ -19,6 +24,7 @@ training:
     epoch: 100
     batch_size: 2
     eval_epoch_interval: 10
+    eval_method: volume
     eval_func: dc
     checkpoint_epoch_interval: 10
     visualize_iter_interval: 0

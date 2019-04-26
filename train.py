@@ -33,6 +33,7 @@ class Trainer:
         self.checkpoint_epoch_interval = cfg['training']['checkpoint_epoch_interval']
         self.visualize_iter_interval = cfg['training']['visualize_iter_interval']
         self.num_workers = cfg['training']['num_workers']
+        self.eval_method = cfg['training']['eval_method']
         self.eval_func = cfg['training']['eval_func']
         self.print_summary = cfg['training']['print_summary']
 
@@ -61,6 +62,7 @@ class Trainer:
 
         valid_acc = 0.0
         best_acc = 0.0
+        best_epoch = 0
 
         for epoch in range(self.start_epoch, self.epoch_num):
             epoch_str = ' Epoch {}/{} '.format(epoch + 1, self.epoch_num)
@@ -78,25 +80,31 @@ class Trainer:
 
             try:
                 loss = self.training()
+                self.logger.add_scalar('loss', loss, epoch)
+
+                if (epoch + 1) % self.eval_epoch_interval == 0:
+                    self.net.eval()
+                    torch.set_grad_enabled(False)
+
+                    # Evaluation phase
+                    if self.eval_method == 'image':
+                        train_acc = self.evaluation(epoch, 'train')
+                    else:
+                        train_acc = self.evaluation_by_volume(epoch, 'train')
+
+                    # Validation phase
+                    if self.eval_method == 'image':
+                        valid_acc = self.evaluation(epoch, 'valid')
+                    else:
+                        valid_acc = self.evaluation_by_volume(epoch, 'valid')
+
+                    print('Train data {} acc:  {:.5f}'.format(self.eval_func, train_acc))
+                    print('Valid data {} acc:  {:.5f}'.format(self.eval_func, valid_acc))
+
             except KeyboardInterrupt:
                 cp_path = os.path.join(self.checkpoint_dir, 'INTERRUPTED.pth')
                 cp.save(epoch, self.net, self.optimizer, cp_path)
                 return
-
-            self.logger.add_scalar('loss', loss, epoch)
-
-            if (epoch + 1) % self.eval_epoch_interval == 0:
-                self.net.eval()
-                torch.set_grad_enabled(False)
-
-                # Evaluation phase
-                train_acc = self.evaluation(epoch, 'train')
-
-                # Validation phase
-                valid_acc = self.evaluation(epoch, 'valid')
-
-                print('Train data {} acc:  {:.5f}'.format(self.eval_func, train_acc))
-                print('Valid data {} acc:  {:.5f}'.format(self.eval_func, valid_acc))
 
             if valid_acc > best_acc:
                 best_acc = valid_acc
@@ -104,14 +112,14 @@ class Trainer:
                 checkpoint_filename = 'best.pth'
                 cp.save(epoch, self.net, self.optimizer, os.path.join(self.checkpoint_dir, checkpoint_filename))
                 print('Update best acc!')
-                self.logger.add_scalar('best epoch', best_epoch, 0)
+                self.logger.add_scalar('best epoch', best_epoch + 1, 0)
                 self.logger.add_scalar('best acc', best_acc, 0)
 
             if (epoch + 1) % self.checkpoint_epoch_interval == 0:
                 checkpoint_filename = 'cp_{:03d}.pth'.format(epoch + 1)
                 cp.save(epoch, self.net.module, self.optimizer, os.path.join(self.checkpoint_dir, checkpoint_filename))
 
-            print(f'Best epoch: {best_epoch}')
+            print(f'Best epoch: {best_epoch + 1}')
             print(f'Best acc: {best_acc:.5f}')
 
     def show_train_info(self):
@@ -160,7 +168,7 @@ class Trainer:
         sampler = SequentialSampler(self.dataset.valid_dataset)
         valid_loader = DataLoader(self.dataset.valid_dataset, batch_size=self.batch_size, sampler=sampler,
                                   num_workers=self.num_workers, pin_memory=True)
-        for batch_idx, (imgs, labels) in enumerate(valid_loader):
+        for batch_idx, (imgs, labels, idx) in enumerate(valid_loader):
             imgs = make_grid(imgs)
             labels = make_grid(labels.unsqueeze(dim=1))
             _, labels, _ = self.dataset.vis_transform(labels=labels)
@@ -174,7 +182,7 @@ class Trainer:
                                   num_workers=self.num_workers, pin_memory=True)
 
         tbar = tqdm(train_loader, ascii=True, desc='train', dynamic_ncols=True)
-        for batch_idx, (imgs, labels) in enumerate(tbar):
+        for batch_idx, (imgs, labels, idx) in enumerate(tbar):
             self.optimizer.zero_grad()
 
             if self.cuda:
@@ -212,7 +220,7 @@ class Trainer:
 
         evaluator = Evaluator(self.dataset.num_classes)
         tbar = tqdm(data_loader, desc=f'eval/{type:5}', ascii=True, dynamic_ncols=True)
-        for batch_idx, (imgs, labels) in enumerate(tbar):
+        for batch_idx, (imgs, labels, idx) in enumerate(tbar):
             if self.cuda:
                 imgs = imgs.cuda()
 
@@ -227,6 +235,77 @@ class Trainer:
                 imshow(title='Valid', imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), shape=(1, 3),
                        subtitle=('image', 'label', 'predict'))
                 self.logger.add_images('output', vis_outputs, epoch, dataformats='NCHW')
+
+        acc = evaluator.eval(self.eval_func)
+        evaluator.log_acc(self.logger, epoch, f'{type}/')
+        return acc
+
+    def evaluation_by_volume(self, epoch, type):
+        type = type.lower()
+        if type == 'train':
+            subset = self.dataset.train_dataset
+            case = self.dataset.case_indices[self.dataset.split_case:]
+            case.pop(0)
+        elif type == 'valid':
+            subset = self.dataset.valid_dataset
+            case = self.dataset.case_indices[:self.dataset.split_case]
+            vis_idx = [i + j for i, j in zip(case, self.dataset.vis_idx)]
+
+        vol_case_i = 0
+        vol_label = []
+        vol_output = []
+
+        vis_case_i = 0
+        vis_img = []
+        vis_label = []
+        vis_output = []
+
+        sampler = SequentialSampler(subset)
+        data_loader = DataLoader(subset, batch_size=self.batch_size, sampler=sampler,
+                                 num_workers=self.num_workers, pin_memory=True)
+
+        evaluator = Evaluator(self.dataset.num_classes)
+
+        with tqdm(total=len(case), ascii=True, desc=f'eval/{type:5}', dynamic_ncols=True) as pbar:
+            for batch_idx, (imgs, labels, idx) in enumerate(data_loader):
+                if self.cuda:
+                    imgs = imgs.cuda()
+                outputs = net(imgs).argmax(dim=1)
+
+                np_labels = labels.cpu().detach().numpy()
+                np_outputs = outputs.cpu().detach().numpy()
+                idx = idx.numpy()
+
+                vol_label.append(np_labels)
+                vol_output.append(np_outputs)
+
+                while type == 'valid' and vis_case_i < len(vis_idx) and idx[-1] + 1 >= vis_idx[vis_case_i]:
+                    img_idx = len(imgs) - (idx[-1] - vis_idx[vis_case_i]) - 1
+                    vis_img.append(imgs[img_idx].unsqueeze(0).cpu().detach())
+                    vis_label.append(labels[img_idx].unsqueeze(0).cpu().detach())
+                    vis_output.append(outputs[img_idx].unsqueeze(0).cpu().detach())
+                    vis_case_i += 1
+
+                while vol_case_i < len(case) and idx[-1] + 1 >= case[vol_case_i]:
+                    vol_output = np.concatenate(vol_output, axis=0)
+                    vol_label = np.concatenate(vol_label, axis=0)
+
+                    vol_idx = case[vol_case_i] - case[vol_case_i - 1]
+                    evaluator.add(vol_output[:vol_idx], vol_label[:vol_idx])
+
+                    vol_output = [vol_output[vol_idx:]]
+                    vol_label = [vol_label[vol_idx:]]
+                    vol_case_i += 1
+                    pbar.update(1)
+
+        if type == 'valid':
+            vis_img = torch.cat(vis_img, dim=0).numpy()
+            vis_label = torch.cat(vis_label, dim=0).numpy()
+            vis_output = torch.cat(vis_output, dim=0).numpy()
+            vis_img, vis_label, vis_output = self.dataset.vis_transform(vis_img, vis_label, vis_output)
+            self.logger.add_images('image', vis_img, epoch)
+            self.logger.add_images('label', vis_label, epoch)
+            self.logger.add_images('output', vis_output, epoch)
 
         acc = evaluator.eval(self.eval_func)
         evaluator.log_acc(self.logger, epoch, f'{type}/')

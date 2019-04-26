@@ -110,6 +110,7 @@ training:
     epoch: 1
     batch_size: 2
     eval_epoch_interval: 1
+    eval_method: image
     eval_func: ~
     checkpoint_epoch_interval: 1
     visualize_iter_interval: 20

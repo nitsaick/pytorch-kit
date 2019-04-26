@@ -145,7 +145,7 @@ class VOC2012Seg(data.Dataset):
         img = data['image']
         label = data['label']
 
-        return img, label
+        return img, label, index
 
     def __len__(self):
         return self.dataset_size
