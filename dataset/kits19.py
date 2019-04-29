@@ -8,7 +8,7 @@ from torch.utils import data
 
 
 class kits19(data.Dataset):
-    def __init__(self, root, valid_rate=0.2, train_transform=None, valid_transform=None,
+    def __init__(self, root, valid_rate=0.3, train_transform=None, valid_transform=None,
                  conversion=False, specified_classes=None):
         self.root = Path(root)
         if conversion:
