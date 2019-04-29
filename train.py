@@ -3,10 +3,14 @@ import shutil
 import sys
 from argparse import ArgumentParser
 
+import apex
 import torch
+import torch.distributed as dist
+from apex.parallel import DistributedDataParallel
 from ruamel import yaml
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data.distributed import DistributedSampler
 from torchvision.utils import make_grid
 
 import utils.checkpoint as cp
@@ -17,17 +21,13 @@ from utils.vis import imshow
 
 
 class Trainer:
-    def __init__(self, net, dataset, optimizer, scheduler, criterion, start_epoch, log_dir, cfg):
-        self.net = net
-        self.dataset = dataset
-        self.optimizer = optimizer
-        self.scheduler = scheduler
-        self.criterion = criterion
-        self.log_dir = log_dir
+    def __init__(self, cfg, resume, distributed, enable_log):
+        self.distributed = distributed
+        self.enable_log = enable_log
+        self.prepare(cfg, resume)
 
-        self.checkpoint_dir = os.path.join(log_dir, 'checkpoint')
+        self.checkpoint_dir = os.path.join(self.log_dir, 'checkpoint')
         self.epoch_num = cfg['training']['epoch']
-        self.start_epoch = start_epoch
         self.batch_size = cfg['training']['batch_size']
         self.eval_epoch_interval = cfg['training']['eval_epoch_interval']
         self.checkpoint_epoch_interval = cfg['training']['checkpoint_epoch_interval']
@@ -41,24 +41,102 @@ class Trainer:
         if self.cuda:
             self.gpu_ids = cfg['training']['device']['ids']
 
-        self.logger = SummaryWriter(log_dir)
+        self.logger = SummaryWriter(self.log_dir)
 
-        if not os.path.exists(self.checkpoint_dir):
-            os.makedirs(self.checkpoint_dir)
+        if self.enable_log:
+            if not os.path.exists(self.checkpoint_dir):
+                os.makedirs(self.checkpoint_dir)
+
+    def prepare(self, cfg, resume):
+        cfg_check(cfg)
+        print('load config: {}'.format(cfg_file))
+
+        path_file = './configs/path.yml'
+        with open(path_file) as fp:
+            path_cfg = yaml.load(fp, Loader=yaml.Loader)
+
+        gpu_check(cfg)
+        log_name_check(cfg)
+        log_dir = os.path.expanduser(os.path.join(path_cfg['log_root'], cfg['training']['log_name']))
+
+        dataset_root = os.path.expanduser(path_cfg[cfg['dataset']['name'].lower()])
+        train_transform = get_transform(cfg, 'train')
+        valid_transform = get_transform(cfg, 'valid')
+
+        dataset = get_dataset(cfg, dataset_root, train_transform, valid_transform)
+        criterion = get_criterion(cfg, dataset)
+        net = get_net(cfg, dataset)
+        optimizer = get_optimizer(cfg, net)
+        scheduler = get_scheduler(cfg, optimizer)
+
+        eval_func_check(cfg, dataset)
+
+        # init_weights(net, cfg['training']['init_weight_func'])
+
+        def check(path):
+            yes = {'yes', 'y', 'ye', ''}
+            no = {'no', 'n'}
+            choice = input(msg)
+            if choice in yes:
+                for file in os.listdir(path):
+                    file_path = os.path.join(path, file)
+                    try:
+                        if os.path.isfile(file_path):
+                            os.unlink(file_path)
+                        elif os.path.isdir(file_path):
+                            shutil.rmtree(file_path)
+                    except Exception as e:
+                        print(e)
+                return True
+            elif choice in no:
+                return False
+
+        if not resume:
+            if self.enable_log:
+                if os.path.exists(log_dir):
+                    files = os.listdir(log_dir)
+                    if len(files) >= 3:
+                        msg = '"{}" has old log file. Do you want to delete? (y/n) '.format(log_dir)
+                        if not check(log_dir):
+                            sys.exit(-1)
+                else:
+                    os.makedirs(log_dir)
+            start_epoch = 0
+        else:
+            net, optimizer, start_epoch = cp.load_params(net, optimizer, root=cp_file)
+
+        if self.enable_log:
+            file = os.path.join(log_dir, 'cfg.yml')
+            with open(file, 'w', encoding='utf-8') as fp:
+                yaml.dump(cfg, fp, default_flow_style=False, Dumper=yaml.RoundTripDumper)
+
+        self.net = net
+        self.dataset = dataset
+        self.optimizer = optimizer
+        self.scheduler = scheduler
+        self.criterion = criterion
+        self.log_dir = log_dir
+        self.start_epoch = start_epoch
 
     def run(self):
-        self.log_info()
+        if self.enable_log:
+            self.log_info()
+
+        print('{:-^40s}'.format(' Start training '))
+        self.show_train_info()
 
         if self.cuda:
-            self.net = torch.nn.DataParallel(self.net, device_ids=self.gpu_ids).cuda()
+            if self.distributed:
+                self.net = apex.parallel.convert_syncbn_model(self.net).cuda()
+                self.net = DistributedDataParallel(self.net)
+            else:
+                self.net = torch.nn.DataParallel(self.net, device_ids=self.gpu_ids).cuda()
+
             self.criterion = self.criterion.cuda()
             for state in self.optimizer.state.values():
                 for k, v in state.items():
                     if isinstance(v, torch.Tensor):
                         state[k] = v.cuda()
-
-        print('{:-^40s}'.format(' Start training '))
-        self.show_train_info()
 
         valid_acc = 0.0
         best_acc = 0.0
@@ -72,28 +150,30 @@ class Trainer:
                 lr = param_group['lr']
                 break
             print('Learning rate: {}'.format(lr))
-            self.logger.add_scalar('lr', lr, epoch)
+            if self.enable_log:
+                self.logger.add_scalar('lr', lr, epoch)
 
             # Training phase
             self.net.train()
             torch.set_grad_enabled(True)
 
             try:
-                loss = self.training()
-                self.logger.add_scalar('loss', loss, epoch)
+                loss = self.training(epoch)
+                if self.enable_log:
+                    self.logger.add_scalar('loss', loss, epoch)
 
-                if (epoch + 1) % self.eval_epoch_interval == 0:
+                if self.enable_log and (epoch + 1) % self.eval_epoch_interval == 0:
                     self.net.eval()
                     torch.set_grad_enabled(False)
 
                     # Evaluation phase
-                    if self.eval_method == 'image':
+                    if self.eval_method == 'image' or self.distributed:
                         train_acc = self.evaluation(epoch, 'train')
                     else:
                         train_acc = self.evaluation_by_volume(epoch, 'train')
 
                     # Validation phase
-                    if self.eval_method == 'image':
+                    if self.eval_method == 'image' or self.distributed:
                         valid_acc = self.evaluation(epoch, 'valid')
                     else:
                         valid_acc = self.evaluation_by_volume(epoch, 'valid')
@@ -102,8 +182,9 @@ class Trainer:
                     print('Valid data {} acc:  {:.5f}'.format(self.eval_func, valid_acc))
 
             except KeyboardInterrupt:
-                cp_path = os.path.join(self.checkpoint_dir, 'INTERRUPTED.pth')
-                cp.save(epoch, self.net, self.optimizer, cp_path)
+                if self.enable_log:
+                    cp_path = os.path.join(self.checkpoint_dir, 'INTERRUPTED.pth')
+                    cp.save(epoch, self.net.module, self.optimizer, cp_path)
                 return
 
             if valid_acc > best_acc:
@@ -131,20 +212,27 @@ class Trainer:
         valid_loader = DataLoader(self.dataset.valid_dataset, batch_size=self.batch_size, sampler=sampler,
                                   num_workers=self.num_workers, pin_memory=True)
 
-        if self.cuda:
-            device = 'cuda' + str(self.gpu_ids)
-        else:
-            device = 'cpu'
-        msg = 'Net: {}\n'.format(self.net.module.__class__.__name__) + \
+        msg = 'Net: {}\n'.format(self.net.__class__.__name__) + \
               'Dataset: {}\n'.format(self.dataset.__class__.__name__) + \
               'Epochs: {}\n'.format(self.epoch_num) + \
-              'Learning rate: {}\n'.format(optimizer.param_groups[0]['lr']) + \
+              'Learning rate: {}\n'.format(self.optimizer.param_groups[0]['lr']) + \
               'Batch size: {}\n'.format(self.batch_size) + \
               'Training size: {}\n'.format(len(train_loader.sampler)) + \
-              'Validation size: {}\n'.format(len(valid_loader.sampler)) + \
-              'Device: {}\n'.format(device)
+              'Validation size: {}\n'.format(len(valid_loader.sampler))
+
+        if not self.distributed:
+            if self.cuda:
+                device = 'cuda' + str(self.gpu_ids)
+            else:
+                device = 'cpu'
+            msg += 'Device: {}\n'.format(device)
+        else:
+            msg += 'Distributed size: {}\n'.format(torch.distributed.get_world_size())
+
         print(msg)
-        self.logger.add_text('detail', msg)
+
+        if self.enable_log:
+            self.logger.add_text('detail', msg)
 
     def log_info(self):
         net_summary_text = net_summary(self.net, self.dataset, device='cpu')
@@ -157,7 +245,7 @@ class Trainer:
         try:
             dummy_input = torch.zeros_like(self.dataset.__getitem__(0)[0])
             dummy_input = dummy_input.view((1,) + dummy_input.shape)
-            self.logger.add_graph(net, dummy_input)
+            self.logger.add_graph(self.net, dummy_input)
         except RuntimeError as e:
             # https://github.com/pytorch/pytorch/issues/10942#issuecomment-481992493
             # the forward function in the deeplab aspp has F.interpolate, kernel is dynamic,
@@ -176,8 +264,13 @@ class Trainer:
             self.logger.add_images('label', labels, 0, dataformats='NCHW')
             break
 
-    def training(self):
-        sampler = RandomSampler(self.dataset.train_dataset)
+    def training(self, epoch):
+        if self.distributed:
+            sampler = DistributedSampler(self.dataset.train_dataset)
+            sampler.set_epoch(epoch)
+        else:
+            sampler = RandomSampler(self.dataset.train_dataset)
+
         train_loader = DataLoader(self.dataset.train_dataset, batch_size=self.batch_size, sampler=sampler,
                                   num_workers=self.num_workers, pin_memory=True)
 
@@ -230,14 +323,17 @@ class Trainer:
             np_labels = labels.cpu().detach().numpy()
             evaluator.add_batch(np_outputs, np_labels)
 
-            if type == 'valid' and self.visualize_iter_interval > 0 and batch_idx % self.visualize_iter_interval == 0:
+            if self.enable_log and type == 'valid' and \
+                    self.visualize_iter_interval > 0 and batch_idx % self.visualize_iter_interval == 0:
                 vis_imgs, vis_labels, vis_outputs = self.dataset.vis_transform(imgs, labels, outputs)
                 imshow(title='Valid', imgs=(vis_imgs[0], vis_labels[0], vis_outputs[0]), shape=(1, 3),
                        subtitle=('image', 'label', 'predict'))
                 self.logger.add_images('output', vis_outputs, epoch, dataformats='NCHW')
 
         acc = evaluator.eval(self.eval_func)
-        evaluator.log_acc(self.logger, epoch, f'{type}/')
+
+        if self.enable_log:
+            evaluator.log_acc(self.logger, epoch, f'{type}/')
         return acc
 
     def evaluation_by_volume(self, epoch, type):
@@ -270,7 +366,7 @@ class Trainer:
             for batch_idx, (imgs, labels, idx) in enumerate(data_loader):
                 if self.cuda:
                     imgs = imgs.cuda()
-                outputs = net(imgs).argmax(dim=1)
+                outputs = self.net(imgs).argmax(dim=1)
 
                 np_labels = labels.cpu().detach().numpy()
                 np_outputs = outputs.cpu().detach().numpy()
@@ -279,14 +375,14 @@ class Trainer:
                 vol_label.append(np_labels)
                 vol_output.append(np_outputs)
 
-                while type == 'valid' and vis_case_i < len(vis_idx) and idx[-1] + 1 >= vis_idx[vis_case_i]:
+                while type == 'valid' and vis_case_i < len(vis_idx) and idx[-1] >= vis_idx[vis_case_i]:
                     img_idx = len(imgs) - (idx[-1] - vis_idx[vis_case_i]) - 1
                     vis_img.append(imgs[img_idx].unsqueeze(0).cpu().detach())
                     vis_label.append(labels[img_idx].unsqueeze(0).cpu().detach())
                     vis_output.append(outputs[img_idx].unsqueeze(0).cpu().detach())
                     vis_case_i += 1
 
-                while vol_case_i < len(case) and idx[-1] + 1 >= case[vol_case_i]:
+                while vol_case_i < len(case) and idx[-1] >= case[vol_case_i] - 1:
                     vol_output = np.concatenate(vol_output, axis=0)
                     vol_label = np.concatenate(vol_label, axis=0)
 
@@ -318,12 +414,23 @@ def get_args():
                         help='load config file')
     parser.add_argument('-r', '--resume', type=str, default=None,
                         help='resume checkpoint')
+    parser.add_argument('-d', '--distributed', default=False, type=bool)
+    parser.add_argument('-l', '--local_rank', default=0, type=int)
     args = parser.parse_args()
     return args
 
 
 if __name__ == '__main__':
     args = get_args()
+
+    enable_log = True
+    if args.distributed:
+        torch.cuda.set_device(args.local_rank)
+        dist.init_process_group(backend='nccl', init_method='env://')
+        torch.backends.cudnn.benchmark = True
+        if dist.get_rank() != 0:
+            enable_log = False
+            sys.stdout = open(os.devnull, 'w')
 
     if not args.resume:
         cfg_file = args.config
@@ -336,70 +443,6 @@ if __name__ == '__main__':
     with open(cfg_file) as fp:
         cfg = yaml.load(fp, Loader=yaml.RoundTripLoader)
 
-    cfg_check(cfg)
-    print('load config: {}'.format(cfg_file))
-
-    path_file = './configs/path.yml'
-    with open(path_file) as fp:
-        path_cfg = yaml.load(fp, Loader=yaml.Loader)
-
-    gpu_check(cfg)
-    log_name_check(cfg)
-    log_dir = os.path.expanduser(os.path.join(path_cfg['log_root'], cfg['training']['log_name']))
-
-    dataset_root = os.path.expanduser(path_cfg[cfg['dataset']['name'].lower()])
-    train_transform = get_transform(cfg, 'train')
-    valid_transform = get_transform(cfg, 'valid')
-
-    dataset = get_dataset(cfg, dataset_root, train_transform, valid_transform)
-    criterion = get_criterion(cfg, dataset)
-    net = get_net(cfg, dataset)
-    optimizer = get_optimizer(cfg, net)
-    scheduler = get_scheduler(cfg, optimizer)
-
-    eval_func_check(cfg, dataset)
-
-
-    # init_weights(net, cfg['training']['init_weight_func'])
-
-    def check(path):
-        yes = {'yes', 'y', 'ye', ''}
-        no = {'no', 'n'}
-        choice = input(msg)
-        if choice in yes:
-            for file in os.listdir(path):
-                file_path = os.path.join(path, file)
-                try:
-                    if os.path.isfile(file_path):
-                        os.unlink(file_path)
-                    elif os.path.isdir(file_path):
-                        shutil.rmtree(file_path)
-                except Exception as e:
-                    print(e)
-            return True
-        elif choice in no:
-            return False
-
-
-    if not args.resume:
-        if os.path.exists(log_dir):
-            files = os.listdir(log_dir)
-            if len(files) >= 3:
-                msg = '"{}" has old log file. Do you want to delete? (y/n) '.format(log_dir)
-                if not check(log_dir):
-                    sys.exit(-1)
-        else:
-            os.makedirs(log_dir)
-        start_epoch = 0
-
-    else:
-
-        net, optimizer, start_epoch = cp.load_params(net, optimizer, root=cp_file)
-
-    file = os.path.join(log_dir, 'cfg.yml')
-    with open(file, 'w', encoding='utf-8') as fp:
-        yaml.dump(cfg, fp, default_flow_style=False, Dumper=yaml.RoundTripDumper)
-
     torch.cuda.empty_cache()
-    trainer = Trainer(net, dataset, optimizer, scheduler, criterion, start_epoch, log_dir, cfg)
+    trainer = Trainer(cfg, args.resume, args.distributed, enable_log)
     trainer.run()
