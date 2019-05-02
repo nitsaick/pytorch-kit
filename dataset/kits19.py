@@ -45,7 +45,8 @@ class kits19(data.Dataset):
         self.valid_dataset = data.Subset(self, self.valid_indices)
         self.test_dataset = self
 
-    def normalize(self, volume):
+    @staticmethod
+    def normalize(volume):
         DEFAULT_HU_MAX = 512
         DEFAULT_HU_MIN = -512
         volume = np.clip(volume, DEFAULT_HU_MIN, DEFAULT_HU_MAX)
@@ -56,23 +57,30 @@ class kits19(data.Dataset):
 
         return volume_norm
 
-    def conversion_nii2npy(self, root):
+    @staticmethod
+    def conversion_nii2npy(root, output=None):
+        root = Path(root)
+        if output is None:
+            output = Path(root)
+        else:
+            output = Path(output)
+
         cases = sorted([d for d in root.iterdir() if d.is_dir()])
         for case in cases:
             print(case)
             vol = nib.load(str(case / 'imaging.nii.gz')).get_data()
-            vol = self.normalize(vol)
-            imaging_dir = case / 'imaging'
+            vol = kits19.normalize(vol)
+            imaging_dir = output / case.name / 'imaging'
             if not imaging_dir.exists():
-                imaging_dir.mkdir()
+                imaging_dir.mkdir(parents=True)
             if len(list(imaging_dir.glob('*.npy'))) != vol.shape[0]:
                 for i in range(vol.shape[0]):
                     np.save(str(imaging_dir / f'{i:03}.npy'), vol[i])
 
             seg = nib.load(str(case / 'segmentation.nii.gz')).get_data()
-            segmentation_dir = case / 'segmentation'
+            segmentation_dir = output / case.name / 'segmentation'
             if not segmentation_dir.exists():
-                segmentation_dir.mkdir()
+                segmentation_dir.mkdir(parents=True)
             if len(list(segmentation_dir.glob('*.npy'))) != seg.shape[0]:
                 for i in range(seg.shape[0]):
                     np.save(str(segmentation_dir / f'{i:03}.npy'), seg[i])
@@ -227,7 +235,7 @@ class kits19(data.Dataset):
 
 if __name__ == '__main__':
     from utils.vis import imshow
-
+    kits19.conversion_nii2npy('D:\Qsync\workspace\kits19-challege\kits19\data', 'D:\Qsync\workspace\kits19-challege\data')
     root = os.path.expanduser('~/dataset/kits19/data')
     dataset = kits19(root=root, valid_rate=0.3,
                       train_transform=None,
