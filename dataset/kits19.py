@@ -5,7 +5,7 @@ import nibabel as nib
 import numpy as np
 import torch
 from torch.utils import data
-
+from dataset.transform import kits19_transform
 
 class kits19(data.Dataset):
     def __init__(self, root, valid_rate=0.3, train_transform=None, valid_transform=None,
@@ -83,7 +83,6 @@ class kits19(data.Dataset):
 
         self.case_indices = [0, ]
         cases = sorted([d for d in root.iterdir() if d.is_dir()])
-        cases.pop(160)
         self.split_case = int(np.round(len(cases) * valid_rate))
         for i in range(len(cases)):
             case = cases[i]
@@ -106,6 +105,10 @@ class kits19(data.Dataset):
         return imgs, labels
 
     def default_transform(self, data):
+        if data['image'].shape[0] != data['image'].shape[1] \
+                and self.train_transform is None and self.valid_transform is None:
+            data = kits19_transform()(data)
+
         image, label = data['image'], data['label']
 
         image = image.astype(np.float32)
@@ -226,11 +229,17 @@ if __name__ == '__main__':
     from utils.vis import imshow
 
     root = os.path.expanduser('~/dataset/kits19/data')
-    dataset_ = kits19(root=root, valid_rate=0.2,
+    dataset = kits19(root=root, valid_rate=0.3,
                       train_transform=None,
-                      valid_transform=None, specified_classes=[0, 0, 2])
+                      valid_transform=None,
+                      specified_classes=[0, 0, 2])
 
-    train_loader, valid_loader, _ = dataset_.get_dataloader(batch_size=10)
-    for batch_idx, (img, label, idx) in enumerate(train_loader):
-        imgs, labels, _ = dataset_.vis_transform(imgs=img, labels=label, preds=None)
+    from torch.utils.data import DataLoader, SequentialSampler
+
+    subset = dataset.train_dataset
+    sampler = SequentialSampler(subset)
+    data_loader = DataLoader(subset, batch_size=20, sampler=sampler)
+
+    for batch_idx, (img, label, idx) in enumerate(data_loader):
+        imgs, labels, _ = dataset.vis_transform(imgs=img, labels=label, preds=None)
         imshow(title='kits19', imgs=(imgs[0], labels[0]))

@@ -17,7 +17,8 @@ from albumentations import (
     CLAHE,
     RandomBrightnessContrast,
     RandomGamma,
-    RandomScale
+    RandomScale,
+    Resize
 )
 
 __all__ = ['to_tensor', 'random_flip_transform', 'random_scale_crop',
@@ -182,6 +183,25 @@ class real_world_transform:
             ])
             data = aug(image=img, mask=label)
             img, label = data['image'], data['mask']
+
+        data = {'image': img, 'label': label}
+        return data
+
+
+class kits19_transform:
+    def __call__(self, data):
+        data = to_numpy(data)
+        img, label = data['image'], data['label']
+
+        num = max(img.shape[0], img.shape[1])
+
+        aug = Compose([
+            PadIfNeeded(min_height=num, min_width=num, border_mode=cv2.BORDER_CONSTANT, p=1),
+            Resize(height=512, width=512, p=1)
+        ])
+
+        data = aug(image=img, mask=label)
+        img, label = data['image'], data['mask']
 
         data = {'image': img, 'label': label}
         return data
