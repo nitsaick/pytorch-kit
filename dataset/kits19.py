@@ -163,6 +163,11 @@ class kits19(data.Dataset):
                     spec_classes_name.append(i)
             return spec_classes_name
 
+    def idx_to_name(self, idx):
+        path = self.imgs[idx]
+        name = Path(path.parts[-3]) / Path(path.parts[-1][:-4])
+        return name
+
     def vis_transform(self, imgs=None, labels=None, preds=None, to_plt=False):
         cmap = self.get_colormap()
         if imgs is not None:
