@@ -20,17 +20,19 @@ def find_latest(root):
         raise FileNotFoundError('No checkpoint file in "{}"'.format(root))
 
 
-def load_params(net, optimizer, device='cpu', root=None, latest=False):
+def load_params(net=None, optimizer=None, device='cpu', root=None, latest=False):
     if latest:
         root = find_latest(root)
     assert os.path.isfile(root)
 
     checkpoint = torch.load(root, map_location=device)
     epoch = checkpoint['epoch'] + 1
-    net.load_state_dict(checkpoint['net'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
-    for state in optimizer.state.values():
-        for k, v in state.items():
-            if isinstance(v, torch.Tensor):
-                state[k] = v.to(device)
+    if net is not None:
+        net.load_state_dict(checkpoint['net'])
+    if optimizer is not None:
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        for state in optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(device)
     return net, optimizer, epoch
